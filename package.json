@@ -1,0 +1,24 @@
+{
+  "name": "sushi-go",
+  "version": "0.0.0",
+  "author": "Reed",
+  "license": "MIT",
+  "scripts": {
+    "start": "ts-node server.ts"
+  },
+  "engines": {
+    "node": "12.x"
+  },
+  "dependencies": {
+    "@types/node": "^13.1.1",
+    "ts-node": "^8.5.4",
+    "typescript": "^3.7.4"
+  },
+  "devDependencies": {
+    "prettier": "^1.19.1"
+  },
+  "prettier": {
+    "printWidth": 100,
+    "trailingComma": "all"
+  }
+}
