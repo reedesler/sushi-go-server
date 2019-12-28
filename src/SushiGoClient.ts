@@ -4,6 +4,7 @@ export enum ReturnCode {
   OK = "200",
   WAITING = "201",
   INVALID_COMMAND = "400",
+  INVALID_JSON = "401",
   TOO_MANY_RETRIES = "499",
 }
 
@@ -50,4 +51,90 @@ export const destroy = (client: SushiGoClient, code: ReturnCode, data?: any) => 
   console.log("Destroying client " + getName(client) + " - " + message);
   client.socket.write(message);
   client.socket.destroy();
+};
+
+export type Command<Context> = StringCommand<Context> | JsonCommand<Context>;
+
+interface StringCommand<Context> {
+  action: string;
+  arguments: string[];
+  isJSON: false;
+  handle: (
+    client: SushiGoClient,
+    args: string[],
+    retry: (message: any, code?: ReturnCode) => void,
+    context: Context,
+  ) => void;
+}
+
+interface JsonCommand<Context> {
+  action: string;
+  arguments: [string];
+  isJSON: true;
+  handle: (
+    client: SushiGoClient,
+    data: unknown,
+    retry: (message: any, code?: ReturnCode) => void,
+    context: Context,
+  ) => void;
+}
+
+const retryCommand = <Context>(
+  client: SushiGoClient,
+  commands: Command<Context>[],
+  context: Context,
+  retries: number,
+  data: any,
+  code = ReturnCode.INVALID_COMMAND,
+) => {
+  send(client, code, data);
+  waitForCommand(client, commands, context, retries - 1);
+};
+
+export const waitForCommand = <Context>(
+  client: SushiGoClient,
+  commands: Command<Context>[],
+  context: Context,
+  retries = 5,
+) => {
+  if (retries === 0) {
+    return destroy(client, ReturnCode.TOO_MANY_RETRIES, "Too many retries");
+  }
+  waitForResponse(client, data => {
+    const args = data.replace(/\n$/, "").split(" ");
+    const command = commands.find(c => c.action === args[0].toUpperCase());
+    if (!command) {
+      retryCommand(
+        client,
+        commands,
+        context,
+        retries,
+        commands.map(
+          c =>
+            c.action +
+            (c.arguments.length > 0 ? " " + c.arguments.map(a => "<" + a + ">").join(" ") : ""),
+        ),
+      );
+    } else {
+      if (command.isJSON) {
+        const jsonString = data.replace(new RegExp("^" + command.action + " ", "i"), "");
+        try {
+          const jsonData = JSON.parse(jsonString);
+          const retry = (retryMessage: any, code?: ReturnCode) =>
+            retryCommand(client, commands, context, retries, retryMessage, code);
+          command.handle(client, jsonData, retry, context);
+        } catch (e) {
+          retryCommand(
+            client,
+            commands,
+            context,
+            retries,
+            "Invalid JSON: " + jsonString,
+            ReturnCode.INVALID_JSON,
+          );
+        }
+      } else {
+      }
+    }
+  });
 };

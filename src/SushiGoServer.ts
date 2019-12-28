@@ -1,5 +1,5 @@
 import * as net from "net";
-import { createLobby, GameLobby, join } from "./GameLobby";
+import { createLobby, GameLobby, enterLobby } from "./GameLobby";
 import { createClient } from "./SushiGoClient";
 
 interface SushiGoServer {
@@ -11,7 +11,7 @@ export const createServer = (): SushiGoServer => {
   const lobby = createLobby();
   const server = net.createServer(socket => {
     const client = createClient(socket);
-    join(lobby, client);
+    enterLobby(lobby, client);
   });
 
   return {
