@@ -4,11 +4,13 @@ import { ReturnCode, send, SushiGoClient, Command, waitForCommand } from "./Sush
 export interface GameLobby {
   games: Game[];
   currentId: number;
+  clientsInLobby: Set<SushiGoClient>;
 }
 
 export const createLobby = (): GameLobby => ({
   games: [],
   currentId: 0,
+  clientsInLobby: new Set<SushiGoClient>(),
 });
 
 const lobbyCommands: Command<GameLobby>[] = [
@@ -21,12 +23,22 @@ const lobbyCommands: Command<GameLobby>[] = [
       const parsedGame = parseGame(data, lobby);
       if (parsedGame.error) return retry(parsedGame.message);
       lobby.games.push(parsedGame.game);
-      enterLobby(lobby, client);
+      updateGamesForAll(lobby);
+      waitForCommand(client, lobbyCommands, lobby);
     },
   },
 ];
 
 export const enterLobby = (lobby: GameLobby, client: SushiGoClient) => {
-  send(client, ReturnCode.OK, lobby.games);
+  sendGames(lobby, client);
+  lobby.clientsInLobby.add(client);
+  client.socket.on("close", () => lobby.clientsInLobby.delete(client));
   waitForCommand(client, lobbyCommands, lobby);
+};
+
+const sendGames = (lobby: GameLobby, client: SushiGoClient) =>
+  send(client, ReturnCode.OK, lobby.games);
+
+const updateGamesForAll = (lobby: GameLobby) => {
+  lobby.clientsInLobby.forEach(c => sendGames(lobby, c));
 };
