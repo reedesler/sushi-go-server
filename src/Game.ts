@@ -1,4 +1,3 @@
-import { ReturnCode } from "./SushiGoClient";
 import { GameLobby } from "./GameLobby";
 
 export interface Game {

@@ -14,7 +14,7 @@ export const createLobby = (): GameLobby => ({
 });
 
 const lobbyCommands: Command<GameLobby>[] = [
-  { action: "JOIN", isJSON: false, arguments: ["gameId"], handle: () => {} },
+  { action: "JOIN", isJSON: true, arguments: ["gameId"], handle: () => {} },
   {
     action: "NEW",
     isJSON: true,

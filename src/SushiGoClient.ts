@@ -1,6 +1,7 @@
 import * as net from "net";
 
 export enum ReturnCode {
+  GIVE_NAME = "100",
   GAME_LIST = "200",
   GAME_CREATED = "201",
   INVALID_COMMAND = "400",
@@ -11,6 +12,8 @@ export enum ReturnCode {
 
 export interface SushiGoClient {
   socket: net.Socket;
+  name: string;
+  version: string;
 }
 
 export const createClient = (socket: net.Socket): SushiGoClient => {
@@ -29,6 +32,8 @@ export const createClient = (socket: net.Socket): SushiGoClient => {
 
   return {
     socket,
+    name: "",
+    version: "",
   };
 };
 
@@ -110,20 +115,16 @@ export const waitForCommand = <Context>(
         commands,
         context,
         retries,
-        commands.map(
-          c =>
-            c.action +
-            (c.arguments.length > 0 ? " " + c.arguments.map(a => "<" + a + ">").join(" ") : ""),
-        ),
+        commands.map(c => commandToString(c)),
         ReturnCode.COMMAND_NOT_FOUND,
       );
     } else {
+      const retry = (retryMessage: any, code?: ReturnCode) =>
+        retryCommand(client, commands, context, retries, retryMessage, code);
       if (command.isJSON) {
         const jsonString = data.replace(new RegExp("^" + command.action + " ", "i"), "");
         try {
           const jsonData = JSON.parse(jsonString);
-          const retry = (retryMessage: any, code?: ReturnCode) =>
-            retryCommand(client, commands, context, retries, retryMessage, code);
           command.handle(client, jsonData, retry, context);
         } catch (e) {
           retryCommand(
@@ -136,8 +137,22 @@ export const waitForCommand = <Context>(
           );
         }
       } else {
-        // TODO
+        if (args.length !== command.arguments.length + 1) {
+          retryCommand(
+            client,
+            commands,
+            context,
+            retries,
+            "Invalid arguments, use " + commandToString(command),
+            ReturnCode.INVALID_COMMAND,
+          );
+        } else {
+          command.handle(client, args.slice(1), retry, context);
+        }
       }
     }
   });
 };
+
+export const commandToString = (c: Command<any>) =>
+  c.action + (c.arguments.length > 0 ? " " + c.arguments.map(a => "<" + a + ">").join(" ") : "");
