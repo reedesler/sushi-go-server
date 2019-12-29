@@ -1,25 +1,29 @@
 import { GameLobby } from "./GameLobby";
+import { SushiGoClient } from "./SushiGoClient";
 
 export interface Game {
   id: number;
   name: string;
-  playerCount: number;
+  players: SushiGoClient[];
   maxPlayers: number;
+  creator: SushiGoClient;
 }
 
-const createGame = (data: { name: string }, lobby: GameLobby): Game => {
+const createGame = (data: { name: string }, lobby: GameLobby, creator: SushiGoClient): Game => {
   lobby.currentId++;
   return {
     id: lobby.currentId,
     name: data.name,
-    playerCount: 0,
+    players: [creator],
     maxPlayers: 5,
+    creator,
   };
 };
 
 export const parseGame = (
   data: unknown,
   lobby: GameLobby,
+  creator: SushiGoClient,
 ): { error: true; message: any } | { error: false; game: Game } => {
   if (typeof data !== "object" || data === null)
     return { error: true, message: "Expected JSON object" };
@@ -28,7 +32,7 @@ export const parseGame = (
     return { error: true, message: { name: "Name must be <= 20 characters" } };
   return {
     error: false,
-    game: createGame(data, lobby),
+    game: createGame(data, lobby, creator),
   };
 };
 
