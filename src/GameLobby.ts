@@ -1,5 +1,5 @@
 import { Game, parseGame } from "./Game";
-import { ReturnCode, send, SushiGoClient, Command, waitForCommand } from "./SushiGoClient";
+import { Command, ReturnCode, send, SushiGoClient, waitForCommand } from "./SushiGoClient";
 
 export interface GameLobby {
   games: Game[];
@@ -22,6 +22,7 @@ const lobbyCommands: Command<GameLobby>[] = [
     handle: (client, data, retry, lobby) => {
       const parsedGame = parseGame(data, lobby);
       if (parsedGame.error) return retry(parsedGame.message);
+      send(client, ReturnCode.GAME_CREATED, parsedGame.game.id);
       lobby.games.push(parsedGame.game);
       updateGamesForAll(lobby);
       waitForCommand(client, lobbyCommands, lobby);
@@ -37,7 +38,7 @@ export const enterLobby = (lobby: GameLobby, client: SushiGoClient) => {
 };
 
 const sendGames = (lobby: GameLobby, client: SushiGoClient) =>
-  send(client, ReturnCode.OK, lobby.games);
+  send(client, ReturnCode.GAME_LIST, lobby.games);
 
 const updateGamesForAll = (lobby: GameLobby) => {
   lobby.clientsInLobby.forEach(c => sendGames(lobby, c));

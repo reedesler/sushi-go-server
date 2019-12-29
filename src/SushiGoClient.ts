@@ -1,10 +1,11 @@
 import * as net from "net";
 
 export enum ReturnCode {
-  OK = "200",
-  WAITING = "201",
+  GAME_LIST = "200",
+  GAME_CREATED = "201",
   INVALID_COMMAND = "400",
   INVALID_JSON = "401",
+  COMMAND_NOT_FOUND = "404",
   TOO_MANY_RETRIES = "499",
 }
 
@@ -43,8 +44,8 @@ export const send = (client: SushiGoClient, code: ReturnCode, data?: any) => {
   client.socket.write(message);
 };
 
-export const waitForResponse = (client: SushiGoClient, handle: (data: string) => void) =>
-  client.socket.once("data", handle);
+export const waitForResponse = (client: SushiGoClient) =>
+  new Promise<string>(resolve => client.socket.once("data", data => resolve("" + data)));
 
 export const destroy = (client: SushiGoClient, code: ReturnCode, data?: any) => {
   const message = getMessage(code, data);
@@ -100,7 +101,7 @@ export const waitForCommand = <Context>(
   if (retries === 0) {
     return destroy(client, ReturnCode.TOO_MANY_RETRIES, "Too many retries");
   }
-  waitForResponse(client, data => {
+  waitForResponse(client).then(data => {
     const args = data.replace(/\n$/, "").split(" ");
     const command = commands.find(c => c.action === args[0].toUpperCase());
     if (!command) {
@@ -114,6 +115,7 @@ export const waitForCommand = <Context>(
             c.action +
             (c.arguments.length > 0 ? " " + c.arguments.map(a => "<" + a + ">").join(" ") : ""),
         ),
+        ReturnCode.COMMAND_NOT_FOUND,
       );
     } else {
       if (command.isJSON) {
@@ -134,6 +136,7 @@ export const waitForCommand = <Context>(
           );
         }
       } else {
+        // TODO
       }
     }
   });

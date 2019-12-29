@@ -25,6 +25,8 @@ export const parseGame = (
   if (typeof data !== "object" || data === null)
     return { error: true, message: "Expected JSON object" };
   if (!hasName(data)) return { error: true, message: { name: "Missing name" } };
+  if (data.name.length > 20)
+    return { error: true, message: { name: "Name must be <= 20 characters" } };
   return {
     error: false,
     game: createGame(data, lobby),
