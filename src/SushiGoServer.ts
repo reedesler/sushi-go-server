@@ -4,11 +4,11 @@ import {
   Command,
   commandToString,
   createClient,
-  ReturnCode,
   send,
   SushiGoClient,
   waitForCommand,
 } from "./SushiGoClient";
+import { ReturnCode } from "./ApiTypes";
 
 interface SushiGoServer {
   socket: net.Server;

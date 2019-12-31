@@ -1,5 +1,6 @@
 import { Game, parseGame } from "./Game";
-import { Command, ReturnCode, send, SushiGoClient, waitForCommand } from "./SushiGoClient";
+import { Command, send, SushiGoClient, waitForCommand } from "./SushiGoClient";
+import { LobbyInfo, ReturnCode } from "./ApiTypes";
 
 export interface GameLobby {
   games: Game[];
@@ -55,19 +56,6 @@ export const enterLobby = (lobby: GameLobby, client: SushiGoClient) => {
   client.socket.on("close", () => lobby.clientsInLobby.delete(client));
   return waitForCommand(client, lobbyCommands, lobby);
 };
-
-interface LobbyInfo {
-  gameList: GameInfo[];
-  queuedForGame: number | null;
-}
-
-export interface GameInfo {
-  id: number;
-  name: string;
-  players: string[];
-  maxPlayers: number;
-  creator: string;
-}
 
 const sendLobbyInfo = (lobby: GameLobby, client: SushiGoClient) => {
   const gameList = lobby.games.map(g => ({
