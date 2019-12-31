@@ -30,6 +30,8 @@ export const parseGame = (
   if (!hasName(data)) return { error: true, message: { name: "Missing name" } };
   if (data.name.length > 20)
     return { error: true, message: { name: "Name must be <= 20 characters" } };
+  if (data.name.length === 0)
+    return { error: true, message: { name: "Name must be > 0 characters" } };
   return {
     error: false,
     game: createGame(data, lobby, creator),

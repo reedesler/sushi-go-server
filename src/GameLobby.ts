@@ -1,6 +1,7 @@
 import { Game, parseGame } from "./Game";
 import { Command, send, SushiGoClient, waitForCommand } from "./SushiGoClient";
 import { LobbyInfo, ReturnCode } from "./ApiTypes";
+import { remove } from "./util";
 
 export interface GameLobby {
   games: Game[];
@@ -53,8 +54,19 @@ const inQueueCommands: Command<GameLobby>[] = [
 export const enterLobby = (lobby: GameLobby, client: SushiGoClient) => {
   sendLobbyInfo(lobby, client);
   lobby.clientsInLobby.add(client);
-  client.socket.on("close", () => lobby.clientsInLobby.delete(client));
+  client.socket.on("close", () => removeClientFromLobby(lobby, client));
   return waitForCommand(client, lobbyCommands, lobby);
+};
+
+const removeClientFromLobby = (lobby: GameLobby, client: SushiGoClient) => {
+  lobby.clientsInLobby.delete(client);
+  const game = lobby.gameQueue.get(client);
+  if (game) {
+    // TODO: if client is game creator, delete game
+    remove(client, game.players);
+  }
+  lobby.gameQueue.delete(client);
+  updateLobbyInfoForAll(lobby);
 };
 
 const sendLobbyInfo = (lobby: GameLobby, client: SushiGoClient) => {
@@ -64,13 +76,13 @@ const sendLobbyInfo = (lobby: GameLobby, client: SushiGoClient) => {
     players: g.players.map(p => p.name),
     queued: lobby.gameQueue.get(client) === g,
   }));
-  send<LobbyInfo>(client, ReturnCode.GAME_LIST, {
+  send<LobbyInfo>(client, ReturnCode.LOBBY_INFO, {
     gameList,
     queuedForGame: lobby.gameQueue.get(client)?.id ?? null,
   });
 };
 
-const updateGamesForAll = (lobby: GameLobby) => {
+const updateLobbyInfoForAll = (lobby: GameLobby) => {
   lobby.clientsInLobby.forEach(c => sendLobbyInfo(lobby, c));
 };
 
@@ -85,15 +97,15 @@ const createGame = (lobby: GameLobby, client: SushiGoClient, game: Game) => {
 const addClientToGame = (lobby: GameLobby, client: SushiGoClient, game: Game) => {
   game.players.push(client);
   lobby.gameQueue.set(client, game);
-  updateGamesForAll(lobby);
+  updateLobbyInfoForAll(lobby);
 };
 
 const removeClientFromGame = (lobby: GameLobby, client: SushiGoClient) => {
   const game = lobby.gameQueue.get(client);
   if (game) {
-    game.players.splice(game.players.indexOf(client), 1);
+    remove(client, game.players);
     lobby.gameQueue.delete(client);
-    updateGamesForAll(lobby);
+    updateLobbyInfoForAll(lobby);
   }
   return waitForCommand(client, lobbyCommands, lobby);
 };

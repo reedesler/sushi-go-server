@@ -1,6 +1,6 @@
 export enum ReturnCode {
   GIVE_NAME = "100",
-  GAME_LIST = "200",
+  LOBBY_INFO = "200",
   GAME_CREATED = "201",
   INVALID_COMMAND = "400",
   INVALID_JSON = "401",
