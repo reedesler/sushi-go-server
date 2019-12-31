@@ -16,6 +16,10 @@ export interface SushiGoClient {
   version: string;
 }
 
+interface End {
+  message: string;
+}
+
 export const createClient = (socket: net.Socket): SushiGoClient => {
   const socketName = getSocketName(socket);
   socket.setEncoding("utf8");
@@ -43,20 +47,20 @@ export const getName = (client: SushiGoClient) => getSocketName(client.socket);
 const getMessage = (code: ReturnCode, data?: any) =>
   code + (data ? " " + JSON.stringify(data) : "") + "\n";
 
-export const send = (client: SushiGoClient, code: ReturnCode, data?: any) => {
+export const send = <T = any>(client: SushiGoClient, code: ReturnCode, data?: T) => {
   const message = getMessage(code, data);
   console.log("->" + getName(client) + " - " + message);
   client.socket.write(message);
 };
 
 export const waitForResponse = (client: SushiGoClient) =>
-  new Promise<string>(resolve => client.socket.once("data", data => resolve("" + data)));
+  new Promise<string>(resolve => client.socket.once("data", data => resolve("" + data))); // TODO: clear existing handler if new one added
 
-export const destroy = (client: SushiGoClient, code: ReturnCode, data?: any) => {
+export const destroy = (client: SushiGoClient, code: ReturnCode, data?: any): Promise<End> => {
   const message = getMessage(code, data);
-  console.log("Destroying client " + getName(client) + " - " + message);
   client.socket.write(message);
   client.socket.destroy();
+  return Promise.resolve({ message: "Destroying " + getName(client) + " - " + message });
 };
 
 export type Command<Context> = StringCommand<Context> | JsonCommand<Context>;
@@ -68,9 +72,9 @@ interface StringCommand<Context> {
   handle: (
     client: SushiGoClient,
     args: string[],
-    retry: (message: any, code?: ReturnCode) => void,
+    retry: (message: any, code?: ReturnCode) => Promise<End>,
     context: Context,
-  ) => void;
+  ) => Promise<End>;
 }
 
 interface JsonCommand<Context> {
@@ -80,9 +84,9 @@ interface JsonCommand<Context> {
   handle: (
     client: SushiGoClient,
     data: unknown,
-    retry: (message: any, code?: ReturnCode) => void,
+    retry: (message: any, code?: ReturnCode) => Promise<End>,
     context: Context,
-  ) => void;
+  ) => Promise<End>;
 }
 
 const retryCommand = <Context>(
@@ -94,7 +98,7 @@ const retryCommand = <Context>(
   code = ReturnCode.INVALID_COMMAND,
 ) => {
   send(client, code, data);
-  waitForCommand(client, commands, context, retries - 1);
+  return waitForCommand(client, commands, context, retries - 1);
 };
 
 export const waitForCommand = <Context>(
@@ -102,15 +106,15 @@ export const waitForCommand = <Context>(
   commands: Command<Context>[],
   context: Context,
   retries = 5,
-) => {
+): Promise<End> => {
   if (retries === 0) {
     return destroy(client, ReturnCode.TOO_MANY_RETRIES, "Too many retries");
   }
-  waitForResponse(client).then(data => {
+  return waitForResponse(client).then(data => {
     const args = data.replace(/\n$/, "").split(" ");
     const command = commands.find(c => c.action === args[0].toUpperCase());
     if (!command) {
-      retryCommand(
+      return retryCommand(
         client,
         commands,
         context,
@@ -125,9 +129,9 @@ export const waitForCommand = <Context>(
         const jsonString = data.replace(new RegExp("^" + command.action + " ", "i"), "");
         try {
           const jsonData = JSON.parse(jsonString);
-          command.handle(client, jsonData, retry, context);
+          return command.handle(client, jsonData, retry, context);
         } catch (e) {
-          retryCommand(
+          return retryCommand(
             client,
             commands,
             context,
@@ -138,7 +142,7 @@ export const waitForCommand = <Context>(
         }
       } else {
         if (args.length !== command.arguments.length + 1) {
-          retryCommand(
+          return retryCommand(
             client,
             commands,
             context,
@@ -147,7 +151,7 @@ export const waitForCommand = <Context>(
             ReturnCode.INVALID_COMMAND,
           );
         } else {
-          command.handle(client, args.slice(1), retry, context);
+          return command.handle(client, args.slice(1), retry, context);
         }
       }
     }

@@ -5,7 +5,7 @@ export interface GameLobby {
   games: Game[];
   currentId: number;
   clientsInLobby: Set<SushiGoClient>;
-  gameQueue: Map<SushiGoClient, Game>;
+  gameQueue: Map<SushiGoClient, Game>; // TODO: maybe don't need this?
 }
 
 export const createLobby = (): GameLobby => ({
@@ -25,6 +25,7 @@ const lobbyCommands: Command<GameLobby>[] = [
       if (!game) return retry("No game with that id");
       if (game.players.length === game.maxPlayers) return retry("Game is full");
       addClientToGame(lobby, client, game);
+      return waitForCommand(client, inQueueCommands, lobby);
     },
   },
   {
@@ -34,11 +35,7 @@ const lobbyCommands: Command<GameLobby>[] = [
     handle: (client, data, retry, lobby) => {
       const parsedGame = parseGame(data, lobby, client);
       if (parsedGame.error) return retry(parsedGame.message);
-      send(client, ReturnCode.GAME_CREATED, parsedGame.game.id);
-      lobby.games.push(parsedGame.game);
-      updateGamesForAll(lobby);
-      waitForCommand(client, lobbyCommands, lobby);
-      // TODO: creator commands: REMOVE, START
+      return createGame(lobby, client, parsedGame.game);
     },
   },
 ];
@@ -53,32 +50,54 @@ const inQueueCommands: Command<GameLobby>[] = [
 ];
 
 export const enterLobby = (lobby: GameLobby, client: SushiGoClient) => {
-  sendGames(lobby, client);
+  sendLobbyInfo(lobby, client);
   lobby.clientsInLobby.add(client);
   client.socket.on("close", () => lobby.clientsInLobby.delete(client));
-  waitForCommand(client, lobbyCommands, lobby);
+  return waitForCommand(client, lobbyCommands, lobby);
 };
 
-const sendGames = (lobby: GameLobby, client: SushiGoClient) =>
-  send(
-    client,
-    ReturnCode.GAME_LIST,
-    lobby.games.map(g => ({
-      ...g,
-      creator: g.creator.name,
-      players: g.players.map(p => p.name),
-    })),
-  );
+interface LobbyInfo {
+  gameList: GameInfo[];
+  queuedForGame: number | null;
+}
+
+export interface GameInfo {
+  id: number;
+  name: string;
+  players: string[];
+  maxPlayers: number;
+  creator: string;
+}
+
+const sendLobbyInfo = (lobby: GameLobby, client: SushiGoClient) => {
+  const gameList = lobby.games.map(g => ({
+    ...g,
+    creator: g.creator.name,
+    players: g.players.map(p => p.name),
+    queued: lobby.gameQueue.get(client) === g,
+  }));
+  send<LobbyInfo>(client, ReturnCode.GAME_LIST, {
+    gameList,
+    queuedForGame: lobby.gameQueue.get(client)?.id ?? null,
+  });
+};
 
 const updateGamesForAll = (lobby: GameLobby) => {
-  lobby.clientsInLobby.forEach(c => sendGames(lobby, c));
+  lobby.clientsInLobby.forEach(c => sendLobbyInfo(lobby, c));
+};
+
+const createGame = (lobby: GameLobby, client: SushiGoClient, game: Game) => {
+  send(client, ReturnCode.GAME_CREATED, game.id);
+  lobby.games.push(game);
+  addClientToGame(lobby, client, game);
+  // TODO: creator commands: REMOVE, START
+  return Promise.resolve({ message: "Client created game" });
 };
 
 const addClientToGame = (lobby: GameLobby, client: SushiGoClient, game: Game) => {
   game.players.push(client);
   lobby.gameQueue.set(client, game);
   updateGamesForAll(lobby);
-  waitForCommand(client, inQueueCommands, lobby);
 };
 
 const removeClientFromGame = (lobby: GameLobby, client: SushiGoClient) => {
@@ -88,5 +107,5 @@ const removeClientFromGame = (lobby: GameLobby, client: SushiGoClient) => {
     lobby.gameQueue.delete(client);
     updateGamesForAll(lobby);
   }
-  waitForCommand(client, lobbyCommands, lobby);
+  return waitForCommand(client, lobbyCommands, lobby);
 };

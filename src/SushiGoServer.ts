@@ -19,7 +19,7 @@ export const createServer = (): SushiGoServer => {
   const lobby = createLobby();
   const server = net.createServer(socket => {
     const client = createClient(socket);
-    welcomeClient(client, lobby);
+    welcomeClient(client, lobby).then(({ message }) => console.error("CLIENT ENDED: " + message));
   });
 
   return {
@@ -41,7 +41,7 @@ const welcomeCommands: Command<GameLobby>[] = [
     arguments: ["name", "version"],
     handle: (client, args, retry, lobby) => {
       const newClient = { ...client, name: args[0], version: args[1] };
-      enterLobby(lobby, newClient);
+      return enterLobby(lobby, newClient);
     },
   },
 ];
@@ -53,5 +53,5 @@ const welcomeClient = (client: SushiGoClient, lobby: GameLobby) => {
     "Welcome to the Sushi Go server, enter your bot's name using the command " +
       commandToString(welcomeCommands[0]),
   );
-  waitForCommand(client, welcomeCommands, lobby);
+  return waitForCommand(client, welcomeCommands, lobby);
 };

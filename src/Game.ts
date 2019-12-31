@@ -14,7 +14,7 @@ const createGame = (data: { name: string }, lobby: GameLobby, creator: SushiGoCl
   return {
     id: lobby.currentId,
     name: data.name,
-    players: [creator],
+    players: [],
     maxPlayers: 5,
     creator,
   };
