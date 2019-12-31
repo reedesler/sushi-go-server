@@ -1,5 +1,11 @@
 import { Game, parseGame } from "./Game";
-import { Command, send, SushiGoClient, waitForCommand } from "./SushiGoClient";
+import {
+  Command,
+  interceptWithCommands,
+  send,
+  SushiGoClient,
+  waitForCommand,
+} from "./SushiGoClient";
 import { LobbyInfo, ReturnCode } from "./ApiTypes";
 import { remove } from "./util";
 
@@ -62,10 +68,13 @@ const removeClientFromLobby = (lobby: GameLobby, client: SushiGoClient) => {
   lobby.clientsInLobby.delete(client);
   const game = lobby.gameQueue.get(client);
   if (game) {
-    // TODO: if client is game creator, delete game
-    remove(client, game.players);
+    if (game.creator === client) {
+      deleteGameFromLobby(lobby, client, game);
+    } else {
+      remove(client, game.players);
+      lobby.gameQueue.delete(client);
+    }
   }
-  lobby.gameQueue.delete(client);
   updateLobbyInfoForAll(lobby);
 };
 
@@ -86,12 +95,40 @@ const updateLobbyInfoForAll = (lobby: GameLobby) => {
   lobby.clientsInLobby.forEach(c => sendLobbyInfo(lobby, c));
 };
 
+const gameCreatorCommands: Command<GameLobby>[] = [
+  {
+    action: "DELETE",
+    isJSON: false,
+    arguments: [],
+    handle: (client, args, retry, lobby) => deleteGame(lobby, client),
+  },
+];
+
 const createGame = (lobby: GameLobby, client: SushiGoClient, game: Game) => {
   send(client, ReturnCode.GAME_CREATED, game.id);
   lobby.games.push(game);
   addClientToGame(lobby, client, game);
-  // TODO: creator commands: REMOVE, START
-  return Promise.resolve({ message: "Client created game" });
+  return waitForCommand(client, gameCreatorCommands, lobby);
+};
+
+const deleteGame = (lobby: GameLobby, client: SushiGoClient) => {
+  const game = lobby.gameQueue.get(client);
+  if (game && game.creator === client) {
+    deleteGameFromLobby(lobby, client, game);
+    updateLobbyInfoForAll(lobby);
+  }
+  return waitForCommand(client, lobbyCommands, lobby);
+};
+
+const deleteGameFromLobby = (lobby: GameLobby, client: SushiGoClient, game: Game) => {
+  remove(client, game.players);
+  lobby.gameQueue.delete(client);
+  game.players.forEach(p => {
+    send(p, ReturnCode.GAME_DELETED, "The game you were in was deleted");
+    lobby.gameQueue.delete(p);
+    interceptWithCommands(p, lobbyCommands, lobby);
+  });
+  remove(game, lobby.games);
 };
 
 const addClientToGame = (lobby: GameLobby, client: SushiGoClient, game: Game) => {

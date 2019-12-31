@@ -44,8 +44,35 @@ export const send = <T = any>(client: SushiGoClient, code: ReturnCode, data?: T)
   client.socket.write(message);
 };
 
-export const waitForResponse = (client: SushiGoClient) =>
-  new Promise<string>(resolve => client.socket.once("data", data => resolve("" + data))); // TODO: clear existing handler if new one added
+const interceptors = new Map<SushiGoClient, (commands: Command[], context: any) => void>();
+
+export const waitForResponse = (client: SushiGoClient) => {
+  let dataHandler: (data: Buffer) => void;
+  const p = new Promise<string>(resolve => {
+    dataHandler = (data: Buffer) => resolve("" + data);
+    client.socket.once("data", dataHandler);
+  });
+  const interceptorPromise = new Promise<{ commands: Command[]; context: any }>(resolve => {
+    const interceptor = (commands: Command[], context: any) => {
+      client.socket.removeListener("data", dataHandler);
+      interceptors.delete(client);
+      resolve({ commands, context });
+    };
+    interceptors.set(client, interceptor);
+  });
+  return Promise.race([p, interceptorPromise]);
+};
+
+export const interceptWithCommands = <Context>(
+  client: SushiGoClient,
+  commands: Command<Context>[],
+  context: Context,
+) => {
+  const interceptor = interceptors.get(client);
+  if (interceptor) {
+    interceptor(commands, context);
+  }
+};
 
 export const destroy = (client: SushiGoClient, code: ReturnCode, data?: any): Promise<End> => {
   const message = getMessage(code, data);
@@ -54,7 +81,7 @@ export const destroy = (client: SushiGoClient, code: ReturnCode, data?: any): Pr
   return Promise.resolve({ message: "Destroying " + getName(client) + " - " + message });
 };
 
-export type Command<Context> = StringCommand<Context> | JsonCommand<Context>;
+export type Command<Context = any> = StringCommand<Context> | JsonCommand<Context>;
 
 interface StringCommand<Context> {
   action: string;
@@ -92,16 +119,20 @@ const retryCommand = <Context>(
   return waitForCommand(client, commands, context, retries - 1);
 };
 
+const MAX_RETRIES = 10;
+
 export const waitForCommand = <Context>(
   client: SushiGoClient,
   commands: Command<Context>[],
   context: Context,
-  retries = 5,
+  retries = MAX_RETRIES,
 ): Promise<End> => {
   if (retries === 0) {
     return destroy(client, ReturnCode.TOO_MANY_RETRIES, "Too many retries");
   }
   return waitForResponse(client).then(data => {
+    if (typeof data === "object")
+      return waitForCommand(client, data.commands, data.context, MAX_RETRIES);
     const args = data.replace(/\n$/, "").split(" ");
     const command = commands.find(c => c.action === args[0].toUpperCase());
     if (!command) {

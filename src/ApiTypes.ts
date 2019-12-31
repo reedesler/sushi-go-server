@@ -6,6 +6,7 @@ export enum ReturnCode {
   INVALID_JSON = "401",
   COMMAND_NOT_FOUND = "404",
   TOO_MANY_RETRIES = "499",
+  GAME_DELETED = "500",
 }
 
 export interface LobbyInfo {
