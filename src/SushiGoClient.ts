@@ -11,6 +11,13 @@ interface End {
   message: string;
 }
 
+export type Data = string | object | number;
+
+interface Message<T extends Data = Data> {
+  code: ReturnCode;
+  data: T;
+}
+
 export const createClient = (socket: net.Socket): SushiGoClient => {
   const socketName = getSocketName(socket);
   socket.setEncoding("utf8");
@@ -35,13 +42,12 @@ export const createClient = (socket: net.Socket): SushiGoClient => {
 const getSocketName = (socket: net.Socket) => socket.remoteAddress + ":" + socket.remotePort;
 export const getName = (client: SushiGoClient) => getSocketName(client.socket);
 
-const getMessage = (code: ReturnCode, data?: any) =>
-  code + (data ? " " + JSON.stringify(data) : "") + "\n";
+const getMessageString = (m: Message) => m.code + " " + JSON.stringify(m.data) + "\n";
 
-export const send = <T = any>(client: SushiGoClient, code: ReturnCode, data?: T) => {
-  const message = getMessage(code, data);
-  console.log("->" + getName(client) + " - " + message);
-  client.socket.write(message);
+export const send = <T extends Data>(client: SushiGoClient, message: Message<T>) => {
+  const messageString = getMessageString(message);
+  console.log("->" + getName(client) + " - " + messageString);
+  client.socket.write(messageString);
 };
 
 const interceptors = new Map<SushiGoClient, (commands: Command[], context: any) => void>();
@@ -74,11 +80,11 @@ export const interceptWithCommands = <Context>(
   }
 };
 
-export const destroy = (client: SushiGoClient, code: ReturnCode, data?: any): Promise<End> => {
-  const message = getMessage(code, data);
-  client.socket.write(message);
+export const destroy = (client: SushiGoClient, message: Message): Promise<End> => {
+  const messageString = getMessageString(message);
+  client.socket.write(messageString);
   client.socket.destroy();
-  return Promise.resolve({ message: "Destroying " + getName(client) + " - " + message });
+  return Promise.resolve({ message: "Destroying " + getName(client) + " - " + messageString });
 };
 
 export type Command<Context = any> = StringCommand<Context> | JsonCommand<Context>;
@@ -90,7 +96,7 @@ interface StringCommand<Context> {
   handle: (
     client: SushiGoClient,
     args: string[],
-    retry: (message: any, code?: ReturnCode) => Promise<End>,
+    retry: (message: { data: Data; code?: ReturnCode }) => Promise<End>,
     context: Context,
   ) => Promise<End>;
 }
@@ -102,7 +108,7 @@ interface JsonCommand<Context> {
   handle: (
     client: SushiGoClient,
     data: unknown,
-    retry: (message: any, code?: ReturnCode) => Promise<End>,
+    retry: (message: { data: Data; code?: ReturnCode }) => Promise<End>,
     context: Context,
   ) => Promise<End>;
 }
@@ -112,10 +118,9 @@ const retryCommand = <Context>(
   commands: Command<Context>[],
   context: Context,
   retries: number,
-  data: any,
-  code = ReturnCode.INVALID_COMMAND,
+  message: { data: Data; code?: ReturnCode },
 ) => {
-  send(client, code, data);
+  send(client, { code: ReturnCode.INVALID_COMMAND, ...message });
   return waitForCommand(client, commands, context, retries - 1);
 };
 
@@ -128,7 +133,7 @@ export const waitForCommand = <Context>(
   retries = MAX_RETRIES,
 ): Promise<End> => {
   if (retries === 0) {
-    return destroy(client, ReturnCode.TOO_MANY_RETRIES, "Too many retries");
+    return destroy(client, { code: ReturnCode.TOO_MANY_RETRIES, data: "Too many retries" });
   }
   return waitForResponse(client).then(data => {
     if (typeof data === "object")
@@ -136,42 +141,29 @@ export const waitForCommand = <Context>(
     const args = data.replace(/\n$/, "").split(" ");
     const command = commands.find(c => c.action === args[0].toUpperCase());
     if (!command) {
-      return retryCommand(
-        client,
-        commands,
-        context,
-        retries,
-        commands.map(c => commandToString(c)),
-        ReturnCode.COMMAND_NOT_FOUND,
-      );
+      return retryCommand(client, commands, context, retries, {
+        code: ReturnCode.COMMAND_NOT_FOUND,
+        data: commands.map(c => commandToString(c)),
+      });
     } else {
-      const retry = (retryMessage: any, code?: ReturnCode) =>
-        retryCommand(client, commands, context, retries, retryMessage, code);
+      const retry = (message: { data: Data; code?: ReturnCode }) =>
+        retryCommand(client, commands, context, retries, message);
       if (command.isJSON) {
         const jsonString = data.replace(new RegExp("^" + command.action + " ", "i"), "");
         try {
           const jsonData = JSON.parse(jsonString);
           return command.handle(client, jsonData, retry, context);
         } catch (e) {
-          return retryCommand(
-            client,
-            commands,
-            context,
-            retries,
-            "Invalid JSON: " + jsonString,
-            ReturnCode.INVALID_JSON,
-          );
+          return retryCommand(client, commands, context, retries, {
+            code: ReturnCode.INVALID_JSON,
+            data: "Invalid JSON: " + jsonString,
+          });
         }
       } else {
         if (args.length !== command.arguments.length + 1) {
-          return retryCommand(
-            client,
-            commands,
-            context,
-            retries,
-            "Invalid arguments, use " + commandToString(command),
-            ReturnCode.INVALID_COMMAND,
-          );
+          return retryCommand(client, commands, context, retries, {
+            data: "Invalid arguments, use " + commandToString(command),
+          });
         } else {
           return command.handle(client, args.slice(1), retry, context);
         }

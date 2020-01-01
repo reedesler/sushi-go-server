@@ -1,5 +1,5 @@
 import * as net from "net";
-import { createLobby, enterLobby, GameLobby } from "./GameLobby";
+import { createLobby, enterLobby, GameLobby } from "./lobby/GameLobby";
 import {
   Command,
   commandToString,
@@ -47,11 +47,11 @@ const welcomeCommands: Command<GameLobby>[] = [
 ];
 
 const welcomeClient = (client: SushiGoClient, lobby: GameLobby) => {
-  send(
-    client,
-    ReturnCode.GIVE_NAME,
-    "Welcome to the Sushi Go server, enter your bot's name using the command " +
+  send(client, {
+    code: ReturnCode.GIVE_NAME,
+    data:
+      "Welcome to the Sushi Go server, enter your bot's name using the command " +
       commandToString(welcomeCommands[0]),
-  );
+  });
   return waitForCommand(client, welcomeCommands, lobby);
 };

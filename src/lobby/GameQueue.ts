@@ -1,7 +1,7 @@
 import { GameLobby } from "./GameLobby";
-import { SushiGoClient } from "./SushiGoClient";
+import { Data, SushiGoClient } from "../SushiGoClient";
 
-export interface Game {
+export interface GameQueue {
   id: number;
   name: string;
   players: SushiGoClient[];
@@ -9,7 +9,11 @@ export interface Game {
   creator: SushiGoClient;
 }
 
-const createGame = (data: { name: string }, lobby: GameLobby, creator: SushiGoClient): Game => {
+const createGame = (
+  data: { name: string },
+  lobby: GameLobby,
+  creator: SushiGoClient,
+): GameQueue => {
   lobby.currentId++;
   return {
     id: lobby.currentId,
@@ -24,7 +28,7 @@ export const parseGame = (
   data: unknown,
   lobby: GameLobby,
   creator: SushiGoClient,
-): { error: true; message: any } | { error: false; game: Game } => {
+): { error: true; message: Data } | { error: false; game: GameQueue } => {
   if (typeof data !== "object" || data === null)
     return { error: true, message: "Expected JSON object" };
   if (!hasName(data)) return { error: true, message: { name: "Missing name" } };
