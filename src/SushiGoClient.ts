@@ -50,7 +50,10 @@ export const send = <T extends Data>(client: SushiGoClient, message: Message<T>)
   client.socket.write(messageString);
 };
 
-const interceptors = new Map<SushiGoClient, (commands: Command[], context: any) => void>();
+const interceptors = new Map<
+  SushiGoClient,
+  <Context>(commands: Command<Context>[], context: Context) => void
+>();
 
 export const waitForResponse = (client: SushiGoClient) => {
   let dataHandler: (data: Buffer) => void;
@@ -58,8 +61,8 @@ export const waitForResponse = (client: SushiGoClient) => {
     dataHandler = (data: Buffer) => resolve("" + data);
     client.socket.once("data", dataHandler);
   });
-  const interceptorPromise = new Promise<{ commands: Command[]; context: any }>(resolve => {
-    const interceptor = (commands: Command[], context: any) => {
+  const interceptorPromise = new Promise<{ commands: Command[]; context: unknown }>(resolve => {
+    const interceptor = <Context>(commands: Command<Context>[], context: Context) => {
       client.socket.removeListener("data", dataHandler);
       interceptors.delete(client);
       resolve({ commands, context });
@@ -87,6 +90,7 @@ export const destroy = (client: SushiGoClient, message: Message): Promise<End> =
   return Promise.resolve({ message: "Destroying " + getName(client) + " - " + messageString });
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Command<Context = any> = StringCommand<Context> | JsonCommand<Context>;
 
 interface StringCommand<Context> {
@@ -172,5 +176,5 @@ export const waitForCommand = <Context>(
   });
 };
 
-export const commandToString = (c: Command<any>) =>
+export const commandToString = (c: Command) =>
   c.action + (c.arguments.length > 0 ? " " + c.arguments.map(a => "<" + a + ">").join(" ") : "");
