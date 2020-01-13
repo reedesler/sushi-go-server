@@ -1,10 +1,12 @@
 import * as net from "net";
 import { ReturnCode } from "./ApiTypes";
+import * as shortid from "shortid";
 
 export interface SushiGoClient {
   socket: net.Socket;
   name: string;
   version: string;
+  id: string;
 }
 
 interface End {
@@ -13,7 +15,7 @@ interface End {
 
 export type Data = string | object | number;
 
-interface Message<T extends Data = Data> {
+export interface Message<T extends Data = Data> {
   code: ReturnCode;
   data: T;
 }
@@ -36,6 +38,7 @@ export const createClient = (socket: net.Socket): SushiGoClient => {
     socket,
     name: "",
     version: "",
+    id: shortid.generate(),
   };
 };
 
@@ -51,7 +54,7 @@ export const send = <T extends Data>(client: SushiGoClient, message: Message<T>)
 };
 
 const interceptors = new Map<
-  SushiGoClient,
+  string,
   <Context>(commands: Command<Context>[], context: Context) => void
 >();
 
@@ -64,10 +67,9 @@ export const waitForResponse = (client: SushiGoClient) => {
   const interceptorPromise = new Promise<{ commands: Command[]; context: unknown }>(resolve => {
     const interceptor = <Context>(commands: Command<Context>[], context: Context) => {
       client.socket.removeListener("data", dataHandler);
-      interceptors.delete(client);
       resolve({ commands, context });
     };
-    interceptors.set(client, interceptor);
+    interceptors.set(client.id, interceptor);
   });
   return Promise.race([p, interceptorPromise]);
 };
@@ -76,9 +78,12 @@ export const interceptWithCommands = <Context>(
   client: SushiGoClient,
   commands: Command<Context>[],
   context: Context,
+  message: Message,
 ) => {
-  const interceptor = interceptors.get(client);
+  send(client, message);
+  const interceptor = interceptors.get(client.id);
   if (interceptor) {
+    interceptors.delete(client.id);
     interceptor(commands, context);
   }
 };
@@ -140,8 +145,9 @@ export const waitForCommand = <Context>(
     return destroy(client, { code: ReturnCode.TOO_MANY_RETRIES, data: "Too many retries" });
   }
   return waitForResponse(client).then(data => {
-    if (typeof data === "object")
+    if (typeof data === "object") {
       return waitForCommand(client, data.commands, data.context, MAX_RETRIES);
+    }
     const args = data.replace(/\n$/, "").split(" ");
     const command = commands.find(c => c.action === args[0].toUpperCase());
     if (!command) {

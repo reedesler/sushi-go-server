@@ -2,23 +2,25 @@ import { GameQueue, parseGame } from "./GameQueue";
 import {
   Command,
   interceptWithCommands,
+  Message,
   send,
   SushiGoClient,
   waitForCommand,
 } from "../SushiGoClient";
 import { LobbyInfo, ReturnCode } from "../ApiTypes";
 import { remove } from "../util";
+import { startGame } from "../game/Game";
 
 export interface GameLobby {
   games: GameQueue[];
   currentId: number;
-  clientsInLobby: Set<SushiGoClient>;
+  clientsInLobby: Map<SushiGoClient, () => void>;
 }
 
 export const createLobby = (): GameLobby => ({
   games: [],
   currentId: 0,
-  clientsInLobby: new Set<SushiGoClient>(),
+  clientsInLobby: new Map<SushiGoClient, () => void>(),
 });
 
 const lobbyCommands: Command<GameLobby>[] = [
@@ -55,11 +57,21 @@ const inQueueCommands: Command<GameLobby>[] = [
   },
 ];
 
-export const enterLobby = (lobby: GameLobby, client: SushiGoClient) => {
+const joinLobby = (lobby: GameLobby, client: SushiGoClient) => {
   sendLobbyInfo(lobby, client);
-  lobby.clientsInLobby.add(client);
-  client.socket.on("close", () => removeClientFromLobby(lobby, client));
+  const onLeave = () => removeClientFromLobby(lobby, client);
+  lobby.clientsInLobby.set(client, onLeave);
+  client.socket.on("close", onLeave);
+};
+
+export const enterLobby = (lobby: GameLobby, client: SushiGoClient) => {
+  joinLobby(lobby, client);
   return waitForCommand(client, lobbyCommands, lobby);
+};
+
+export const interceptLobby = (lobby: GameLobby, client: SushiGoClient, message: Message) => {
+  joinLobby(lobby, client);
+  interceptWithCommands(client, lobbyCommands, lobby, message);
 };
 
 const getClientGame = (lobby: GameLobby, client: SushiGoClient) =>
@@ -74,8 +86,8 @@ const removeClientFromLobby = (lobby: GameLobby, client: SushiGoClient) => {
     } else {
       remove(client, game.players);
     }
+    updateLobbyInfoForAll(lobby);
   }
-  updateLobbyInfoForAll(lobby);
 };
 
 const sendLobbyInfo = (lobby: GameLobby, client: SushiGoClient) => {
@@ -94,7 +106,7 @@ const sendLobbyInfo = (lobby: GameLobby, client: SushiGoClient) => {
 };
 
 const updateLobbyInfoForAll = (lobby: GameLobby) => {
-  lobby.clientsInLobby.forEach(c => sendLobbyInfo(lobby, c));
+  lobby.clientsInLobby.forEach((v, c) => sendLobbyInfo(lobby, c));
 };
 
 const gameCreatorCommands: Command<GameLobby>[] = [
@@ -108,7 +120,7 @@ const gameCreatorCommands: Command<GameLobby>[] = [
     action: "START",
     isJSON: false,
     arguments: [],
-    handle: (client, args, retry, lobby) => startGame(lobby, client),
+    handle: (client, args, retry, lobby) => startGameFromLobby(lobby, client),
   },
 ];
 
@@ -128,11 +140,13 @@ const deleteGame = (lobby: GameLobby, client: SushiGoClient) => {
   return waitForCommand(client, lobbyCommands, lobby);
 };
 
-const deleteGameFromLobby = (lobby: GameLobby, client: SushiGoClient, game: GameQueue) => {
-  remove(client, game.players);
+const deleteGameFromLobby = (lobby: GameLobby, creator: SushiGoClient, game: GameQueue) => {
+  remove(creator, game.players);
   game.players.forEach(p => {
-    send(p, { code: ReturnCode.GAME_DELETED, data: "The game you were in was deleted" });
-    interceptWithCommands(p, lobbyCommands, lobby);
+    interceptWithCommands(p, lobbyCommands, lobby, {
+      code: ReturnCode.GAME_DELETED,
+      data: "The game you were in was deleted",
+    });
   });
   remove(game, lobby.games);
 };
@@ -151,7 +165,19 @@ const removeClientFromGame = (lobby: GameLobby, client: SushiGoClient) => {
   return waitForCommand(client, lobbyCommands, lobby);
 };
 
-const startGame = (lobby: GameLobby, client: SushiGoClient) => {
-  send(client, { code: ReturnCode.UNIMPLEMENTED, data: "Oops you can't start games quite yet" });
-  return waitForCommand(client, gameCreatorCommands, lobby);
+const startGameFromLobby = (lobby: GameLobby, client: SushiGoClient) => {
+  const game = getClientGame(lobby, client);
+  if (game) {
+    remove(game, lobby.games);
+    for (const p of game.players) {
+      const onLeave = lobby.clientsInLobby.get(client);
+      if (onLeave) {
+        client.socket.removeListener("close", onLeave);
+        lobby.clientsInLobby.delete(p);
+      }
+    }
+    updateLobbyInfoForAll(lobby);
+    return startGame(game, lobby, client);
+  }
+  return waitForCommand(client, lobbyCommands, lobby);
 };
