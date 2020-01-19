@@ -10,7 +10,9 @@ import {
 } from "./SushiGoClient";
 import { ReturnCode } from "./ApiTypes";
 
-interface SushiGoServer {
+const LOG = process.env.NODE_ENV !== "test";
+
+export interface SushiGoServer {
   socket: net.Server;
   lobby: GameLobby;
 }
@@ -19,7 +21,9 @@ export const createServer = (): SushiGoServer => {
   const lobby = createLobby();
   const server = net.createServer(socket => {
     const client = createClient(socket);
-    welcomeClient(client, lobby).then(({ message }) => console.error("CLIENT ENDED: " + message));
+    welcomeClient(client, lobby).then(
+      ({ message }) => LOG && console.error("CLIENT ENDED: " + message),
+    );
   });
 
   return {
@@ -28,9 +32,12 @@ export const createServer = (): SushiGoServer => {
   };
 };
 
-export const start = (server: SushiGoServer, port: number) => {
-  return server.socket.listen(port, "0.0.0.0", () => {
-    console.log("Server started on port " + port);
+export const start = (server: SushiGoServer, port: number, local = false, onStart?: () => void) => {
+  return server.socket.listen(port, local ? "localhost" : "0.0.0.0", () => {
+    if (LOG) {
+      console.log("Server started on port " + port);
+    }
+    onStart?.();
   });
 };
 
@@ -54,4 +61,8 @@ const welcomeClient = (client: SushiGoClient, lobby: GameLobby) => {
       commandToString(welcomeCommands[0]),
   });
   return waitForCommand(client, welcomeCommands, lobby);
+};
+
+export const endServer = (server: SushiGoServer, onEnd?: () => void) => {
+  server.socket.close(onEnd);
 };

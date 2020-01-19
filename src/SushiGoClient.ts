@@ -2,6 +2,8 @@ import * as net from "net";
 import { ReturnCode } from "./ApiTypes";
 import * as shortid from "shortid";
 
+const LOG = process.env.NODE_ENV !== "test";
+
 export interface SushiGoClient {
   socket: net.Socket;
   name: string;
@@ -24,15 +26,17 @@ export const createClient = (socket: net.Socket): SushiGoClient => {
   const socketName = getSocketName(socket);
   socket.setEncoding("utf8");
 
-  console.log("Client connected: " + socketName);
+  if (LOG) {
+    console.log("Client connected: " + socketName);
 
-  socket.on("close", () => {
-    console.log("Client " + socketName + " disconnected");
-  });
+    socket.on("close", () => {
+      console.log("Client " + socketName + " disconnected");
+    });
 
-  socket.on("data", data => console.log(socketName + " - " + data));
+    socket.on("data", data => console.log(socketName + " - " + data));
 
-  socket.on("error", error => console.log("Client " + socketName + " " + error));
+    socket.on("error", error => console.log("Client " + socketName + " " + error));
+  }
 
   return {
     socket,
@@ -49,7 +53,9 @@ const getMessageString = (m: Message) => m.code + " " + JSON.stringify(m.data) +
 
 export const send = <T extends Data>(client: SushiGoClient, message: Message<T>) => {
   const messageString = getMessageString(message);
-  console.log("->" + getName(client) + " - " + messageString);
+  if (LOG) {
+    console.log("->" + getName(client) + " - " + messageString);
+  }
   client.socket.write(messageString);
 };
 
