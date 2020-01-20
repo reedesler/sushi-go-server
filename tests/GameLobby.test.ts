@@ -186,6 +186,44 @@ test("Can join a game and update the lobby", async () => {
   }
 });
 
+test("Shows error when trying to join a game that doesn't exist", async () => {
+  const creatorClient = createTestClient(PORT, "CreatorClient");
+  const joinClient = createTestClient(PORT, "JoinClient");
+
+  try {
+    const id = await createGame(creatorClient);
+    await login(joinClient);
+    send(joinClient, "JOIN 500");
+    await waitFor(joinClient, '400 "No game with that id"');
+  } finally {
+    await Promise.all([endClient(creatorClient), endClient(joinClient)]);
+  }
+});
+
+test("Shows error when trying to join a full game", async () => {
+  const creatorClient = createTestClient(PORT, "CreatorClient");
+  const joinClient = createTestClient(PORT, "JoinClient");
+  const clients: TestClient[] = [];
+  for (let i = 0; i < 5; i++) {
+    clients.push(createTestClient(PORT, "JoinClient" + i));
+  }
+
+  try {
+    const id = await createGame(creatorClient);
+    for (const c of clients) {
+      await login(c);
+      send(c, "JOIN " + id);
+    }
+    await login(joinClient);
+    send(joinClient, "JOIN " + id);
+    await waitFor(joinClient, '400 "Game is full"');
+  } finally {
+    await Promise.all(
+      [endClient(creatorClient), endClient(joinClient)].concat(clients.map(c => endClient(c))),
+    );
+  }
+});
+
 const setupJoinedGame = async (
   creatorClient: TestClient,
   joinClient: TestClient,
