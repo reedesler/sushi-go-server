@@ -52,6 +52,12 @@ export const getName = (client: SushiGoClient) => getSocketName(client.socket);
 const getMessageString = (m: Message) => m.code + " " + JSON.stringify(m.data) + "\n";
 
 export const send = <T extends Data>(client: SushiGoClient, message: Message<T>) => {
+  if (client.socket.destroyed) {
+    if (LOG) {
+      console.log("Tried to sent message to disconnected client: " + getSocketName(client.socket));
+    }
+    return;
+  }
   const messageString = getMessageString(message);
   if (LOG) {
     console.log("->" + getName(client) + " - " + messageString);

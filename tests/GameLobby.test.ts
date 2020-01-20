@@ -2,10 +2,12 @@ import { createServer, endServer, start, SushiGoServer } from "../src/SushiGoSer
 import {
   createGame,
   createTestClient,
-  endTest,
+  endClient,
+  joinGame,
   login,
   runTest,
   send,
+  TestClient,
   waitFor,
   waitForCode,
   waitForJson,
@@ -127,7 +129,7 @@ test("Can delete game after creating one", () =>
     }),
   ));
 
-const createdGame = (id: number) => ({
+const createdGame = (id: number, joined = false, inQueue = false) => ({
   code: ReturnCode.LOBBY_INFO,
   data: {
     gameList: [
@@ -136,10 +138,10 @@ const createdGame = (id: number) => ({
         id,
         maxPlayers: 5,
         name: "New Test Game",
-        players: ["CreatorClient"],
+        players: ["CreatorClient", ...(joined ? ["JoinClient"] : [])],
       },
     ],
-    queuedForGame: null,
+    queuedForGame: inQueue ? id : null,
   },
 });
 
@@ -153,7 +155,7 @@ test("Can see existing games when logged in", () => {
         return waitForJson(joinClient, createdGame(id));
       }),
     )
-    .finally(() => Promise.all([endTest(creatorClient), endTest(joinClient)]));
+    .finally(() => Promise.all([endClient(creatorClient), endClient(joinClient)]));
 });
 
 test("Can see new game when it is created", () => {
@@ -162,5 +164,138 @@ test("Can see new game when it is created", () => {
   return login(joinClient)
     .then(() => createGame(creatorClient))
     .then(id => waitForJson(joinClient, createdGame(id)))
-    .finally(() => Promise.all([endTest(creatorClient), endTest(joinClient)]));
+    .finally(() => Promise.all([endClient(creatorClient), endClient(joinClient)]));
+});
+
+test("Can join a game and update the lobby", async () => {
+  const creatorClient = createTestClient(PORT, "CreatorClient");
+  const joinClient = createTestClient(PORT, "JoinClient");
+  const observerClient = createTestClient(PORT, "ObserverClient");
+
+  try {
+    await login(observerClient);
+    const id = await createGame(creatorClient);
+    await waitForCode(observerClient, ReturnCode.LOBBY_INFO);
+    await login(joinClient);
+    send(joinClient, "JOIN " + id);
+    await waitForJson(joinClient, createdGame(id, true, true));
+    await waitForJson(creatorClient, createdGame(id, true, true));
+    await waitForJson(observerClient, createdGame(id, true));
+  } finally {
+    await Promise.all([endClient(creatorClient), endClient(joinClient), endClient(observerClient)]);
+  }
+});
+
+const setupJoinedGame = async (
+  creatorClient: TestClient,
+  joinClient: TestClient,
+  observerClient?: TestClient,
+) => {
+  if (observerClient) {
+    await login(observerClient);
+  }
+  const id = await createGame(creatorClient);
+  if (observerClient) {
+    await waitForCode(observerClient, ReturnCode.LOBBY_INFO);
+  }
+  await joinGame(joinClient, id);
+  if (observerClient) {
+    await waitForCode(observerClient, ReturnCode.LOBBY_INFO);
+  }
+  await waitForCode(creatorClient, ReturnCode.LOBBY_INFO);
+  return id;
+};
+
+test("Shows commands for in a game queue", async () => {
+  const creatorClient = createTestClient(PORT, "CreatorClient");
+  const joinClient = createTestClient(PORT, "JoinClient");
+
+  try {
+    await setupJoinedGame(creatorClient, joinClient);
+    send(joinClient, "a");
+    await waitFor(joinClient, '404 ["LEAVE"]');
+  } finally {
+    await Promise.all([endClient(creatorClient), endClient(joinClient)]);
+  }
+});
+
+test("Can leave a game and update the lobby", async () => {
+  const creatorClient = createTestClient(PORT, "CreatorClient");
+  const joinClient = createTestClient(PORT, "JoinClient");
+  const observerClient = createTestClient(PORT, "ObserverClient");
+
+  try {
+    const id = await setupJoinedGame(creatorClient, joinClient, observerClient);
+    send(joinClient, "LEAVE");
+    await waitForJson(joinClient, createdGame(id));
+    await waitForJson(creatorClient, createdGame(id, false, true));
+    await waitForJson(observerClient, createdGame(id));
+  } finally {
+    await Promise.all([endClient(creatorClient), endClient(joinClient), endClient(observerClient)]);
+  }
+});
+
+test("Treats disconnecting as leaving a game", async () => {
+  const creatorClient = createTestClient(PORT, "CreatorClient");
+  const joinClient = createTestClient(PORT, "JoinClient");
+  const observerClient = createTestClient(PORT, "ObserverClient");
+
+  try {
+    const id = await setupJoinedGame(creatorClient, joinClient, observerClient);
+    await endClient(joinClient);
+    await waitForJson(creatorClient, createdGame(id, false, true));
+    await waitForJson(observerClient, createdGame(id));
+  } finally {
+    await Promise.all([endClient(creatorClient), endClient(joinClient), endClient(observerClient)]);
+  }
+});
+
+const emptyLobby = {
+  code: ReturnCode.LOBBY_INFO,
+  data: {
+    gameList: [],
+    queuedForGame: null,
+  },
+};
+
+test("Can delete a game and update the lobby", async () => {
+  const creatorClient = createTestClient(PORT, "CreatorClient");
+  const joinClient = createTestClient(PORT, "JoinClient");
+  const observerClient = createTestClient(PORT, "ObserverClient");
+
+  try {
+    await setupJoinedGame(creatorClient, joinClient, observerClient);
+    send(creatorClient, "DELETE");
+    await waitFor(joinClient, '500 "The game you were in was deleted"');
+    await Promise.all([
+      waitForJson(joinClient, emptyLobby),
+      waitForJson(observerClient, emptyLobby),
+      waitForJson(creatorClient, emptyLobby),
+    ]);
+  } finally {
+    await Promise.all([endClient(creatorClient), endClient(joinClient), endClient(observerClient)]);
+  }
+});
+
+test("Sends everyone in a deleted game back to the lobby state", async () => {
+  const creatorClient = createTestClient(PORT, "CreatorClient");
+  const joinClient = createTestClient(PORT, "JoinClient");
+  const observerClient = createTestClient(PORT, "ObserverClient");
+
+  try {
+    await setupJoinedGame(creatorClient, joinClient, observerClient);
+    send(creatorClient, "DELETE");
+    await waitForCode(joinClient, ReturnCode.GAME_DELETED);
+    await Promise.all([
+      waitForCode(joinClient, ReturnCode.LOBBY_INFO),
+      waitForCode(observerClient, ReturnCode.LOBBY_INFO),
+      waitForCode(creatorClient, ReturnCode.LOBBY_INFO),
+    ]);
+    send(joinClient, "a");
+    await waitFor(joinClient, '404 ["JOIN <gameId>","NEW <gameConfig>"]');
+    send(creatorClient, "a");
+    await waitFor(creatorClient, '404 ["JOIN <gameId>","NEW <gameConfig>"]');
+  } finally {
+    await Promise.all([endClient(creatorClient), endClient(joinClient), endClient(observerClient)]);
+  }
 });

@@ -16,7 +16,7 @@ export const runTest = (port: number, test: (client: TestClient) => Promise<unkn
     .catch(e => {
       throw e;
     })
-    .finally(() => endTest(client));
+    .finally(() => endClient(client));
 };
 
 export const createTestClient = (port: number, name = "TestClient"): TestClient => {
@@ -62,8 +62,10 @@ const getNextJson = <T>(client: TestClient, code: ReturnCode) =>
 
 export const send = (client: TestClient, data: string) => client.clientSocket.write(data);
 
-export const endTest = (client: TestClient) =>
-  new Promise(resolve => client.clientSocket.end(resolve));
+export const endClient = (client: TestClient) =>
+  client.clientSocket.destroyed
+    ? Promise.resolve()
+    : new Promise(resolve => client.clientSocket.end(resolve));
 
 export const login = (client: TestClient) =>
   waitForCode(client, ReturnCode.GIVE_NAME).then(() => {
@@ -77,4 +79,10 @@ export const createGame = (client: TestClient) =>
     return getNextJson<number>(client, ReturnCode.GAME_CREATED).then(id => {
       return waitForCode(client, ReturnCode.LOBBY_INFO).then(() => id);
     });
+  });
+
+export const joinGame = (client: TestClient, id: number) =>
+  login(client).then(() => {
+    send(client, "JOIN " + id);
+    return waitForCode(client, ReturnCode.LOBBY_INFO);
   });

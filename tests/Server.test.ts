@@ -54,15 +54,17 @@ test("Disconnects client after too many retries", () =>
         return waitForCode(client, ReturnCode.COMMAND_NOT_FOUND);
       });
     }
-    return p.then(() => {
-      send(client, "a");
-      return waitForJson(client, {
-        code: ReturnCode.COMMAND_NOT_FOUND,
-        data: ["HELO <name> <version>"],
-      }).then(() =>
+    return p
+      .then(() => {
+        send(client, "a");
+        return waitForJson(client, {
+          code: ReturnCode.COMMAND_NOT_FOUND,
+          data: ["HELO <name> <version>"],
+        });
+      })
+      .then(() =>
         waitForJson(client, { code: ReturnCode.TOO_MANY_RETRIES, data: "Too many retries" }),
       );
-    });
   }));
 
 test("Displays welcome commands", () =>
