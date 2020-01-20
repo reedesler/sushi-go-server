@@ -1,5 +1,5 @@
 import { createServer, endServer, start, SushiGoServer } from "../src/SushiGoServer";
-import { login, runTest, send, waitFor, waitForCode } from "./TestClient";
+import { login, runTest, send, waitFor, waitForCode, waitForMultipleJson } from "./TestClient";
 import { ReturnCode } from "../src/ApiTypes";
 
 let server: SushiGoServer;
@@ -45,16 +45,22 @@ test("Shows error with too many arguments", () =>
     }),
   ));
 
-test.skip("Disconnects client after too many retries", () =>
+test("Disconnects client after too many retries", () =>
   runTest(PORT, client => {
     let p = waitForCode(client, ReturnCode.GIVE_NAME);
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 9; i++) {
       p = p.then(() => {
         send(client, "a");
         return waitForCode(client, ReturnCode.COMMAND_NOT_FOUND);
       });
     }
-    return p.then(() => {});
+    return p.then(() => {
+      send(client, "a");
+      return waitForMultipleJson(client, [
+        { code: ReturnCode.COMMAND_NOT_FOUND, data: ["HELO <name> <version>"] },
+        { code: ReturnCode.TOO_MANY_RETRIES, data: "Too many retries" },
+      ]);
+    });
   }));
 
 test("Displays welcome commands", () =>
