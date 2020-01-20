@@ -1,17 +1,14 @@
 import { createServer, endServer, start, SushiGoServer } from "../src/SushiGoServer";
 import {
-  checkJson,
   createGame,
   createTestClient,
   endTest,
-  lastResponse,
   login,
   runTest,
   send,
   waitFor,
   waitForCode,
   waitForJson,
-  waitForMultipleJson,
 } from "./TestClient";
 import { ReturnCode } from "../src/ApiTypes";
 
@@ -50,9 +47,8 @@ describe("Creating a new game", () => {
     runTest(PORT, client =>
       login(client).then(() => {
         send(client, 'NEW {"name": "New Test Game"}');
-        return waitForMultipleJson(client, [
-          { code: ReturnCode.GAME_CREATED, data: 1 },
-          {
+        return waitForJson(client, { code: ReturnCode.GAME_CREATED, data: 1 }).then(() =>
+          waitForJson(client, {
             code: ReturnCode.LOBBY_INFO,
             data: {
               gameList: [
@@ -66,8 +62,8 @@ describe("Creating a new game", () => {
               ],
               queuedForGame: 1,
             },
-          },
-        ]);
+          }),
+        );
       }),
     ));
 
@@ -151,7 +147,12 @@ test("Can see existing games when logged in", () => {
   const creatorClient = createTestClient(PORT, "CreatorClient");
   const joinClient = createTestClient(PORT, "JoinClient");
   return createGame(creatorClient)
-    .then(id => login(joinClient).then(() => checkJson(createdGame(id), lastResponse(joinClient))))
+    .then(id =>
+      waitForCode(joinClient, ReturnCode.GIVE_NAME).then(() => {
+        send(joinClient, `HELO ${joinClient.name} 0.1`);
+        return waitForJson(joinClient, createdGame(id));
+      }),
+    )
     .finally(() => Promise.all([endTest(creatorClient), endTest(joinClient)]));
 });
 

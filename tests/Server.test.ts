@@ -1,5 +1,5 @@
 import { createServer, endServer, start, SushiGoServer } from "../src/SushiGoServer";
-import { login, runTest, send, waitFor, waitForCode, waitForMultipleJson } from "./TestClient";
+import { login, runTest, send, waitFor, waitForCode, waitForJson } from "./TestClient";
 import { ReturnCode } from "../src/ApiTypes";
 
 let server: SushiGoServer;
@@ -56,10 +56,12 @@ test("Disconnects client after too many retries", () =>
     }
     return p.then(() => {
       send(client, "a");
-      return waitForMultipleJson(client, [
-        { code: ReturnCode.COMMAND_NOT_FOUND, data: ["HELO <name> <version>"] },
-        { code: ReturnCode.TOO_MANY_RETRIES, data: "Too many retries" },
-      ]);
+      return waitForJson(client, {
+        code: ReturnCode.COMMAND_NOT_FOUND,
+        data: ["HELO <name> <version>"],
+      }).then(() =>
+        waitForJson(client, { code: ReturnCode.TOO_MANY_RETRIES, data: "Too many retries" }),
+      );
     });
   }));
 
