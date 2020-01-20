@@ -1,9 +1,11 @@
 import * as net from "net";
-import { ReturnCode } from "../src/ApiTypes";
+import { LobbyInfo, ReturnCode } from "../src/ApiTypes";
 import { Message } from "../src/SushiGoClient";
 
 export interface TestClient {
   socket: net.Socket;
+  name: string;
+  response: jest.Mock<void, [string]>;
 }
 
 export const runTest = (port: number, test: (client: TestClient) => Promise<unknown>) => {
@@ -15,22 +17,35 @@ export const runTest = (port: number, test: (client: TestClient) => Promise<unkn
     .finally(() => endTest(client));
 };
 
-export const createTestClient = (port: number): TestClient => ({
-  socket: net.createConnection(port),
-});
+export const createTestClient = (port: number, name = "TestClient"): TestClient => {
+  const client = {
+    socket: net.createConnection(port),
+    name,
+    response: jest.fn(),
+  };
+  client.socket.on("data", buffer => client.response(buffer + ""));
+  return client;
+};
 
 export const wait = (client: TestClient) =>
   new Promise<string>(resolve => client.socket.once("data", buffer => resolve(buffer + "")));
 
+const waitForMultiple = (client: TestClient) =>
+  wait(client).then(string => string.split("\n").slice(0, -1));
+
 export const waitFor = (client: TestClient, data: string) =>
   wait(client).then(string => expect(string).toBe(data + "\n"));
 
-export const waitForCode = (client: TestClient, code: ReturnCode) =>
-  wait(client).then(string => expect(string.slice(0, 3)).toBe(code));
+const checkCode = (response: string, code: ReturnCode) => expect(response.slice(0, 3)).toBe(code);
 
-const checkJson = (message: Message, data: string) => {
+export const waitForCode = (client: TestClient, code: ReturnCode) =>
+  wait(client).then(string => checkCode(string, code));
+
+const getJson = (response: string) => JSON.parse(response.substr(4));
+
+export const checkJson = (message: Message, data: string) => {
   expect(data.slice(0, 3)).toBe(message.code);
-  const json = JSON.parse(data.substr(4));
+  const json = getJson(data);
   expect(json).toEqual(message.data);
 };
 
@@ -38,20 +53,47 @@ export const waitForJson = (client: TestClient, data: Message) =>
   wait(client).then(string => checkJson(data, string));
 
 export const waitForMultipleJson = (client: TestClient, data: Message[]) =>
-  wait(client).then(string => {
-    const responses = string.split("\n").slice(0, -1);
+  waitForMultiple(client).then(responses => {
     expect(data).toHaveLength(responses.length);
     responses.forEach((s, index) => {
       checkJson(data[index], s);
     });
   });
 
+const getNextJson = <T extends unknown[]>(client: TestClient, codes: ReturnCode[]) =>
+  waitForMultiple(client).then(responses => {
+    expect(codes).toHaveLength(responses.length);
+    return responses.map((response, index) => {
+      checkCode(response, codes[index]);
+      return getJson(response);
+    }) as T;
+  });
+
 export const send = (client: TestClient, data: string) => client.socket.write(data);
 
 export const endTest = (client: TestClient) => new Promise(resolve => client.socket.end(resolve));
 
-export const login = (client: TestClient) =>
-  waitForCode(client, ReturnCode.GIVE_NAME).then(() => {
-    send(client, "HELO TestClient 0.1");
+export const login = (client: TestClient) => {
+  const alreadyJoined = client.response.mock.calls.length === 1;
+  const p = alreadyJoined ? Promise.resolve() : waitForCode(client, ReturnCode.GIVE_NAME);
+  return p.then(() => {
+    send(client, `HELO ${client.name} 0.1`);
     return waitForCode(client, ReturnCode.LOBBY_INFO);
   });
+};
+
+export const createGame = (client: TestClient) =>
+  login(client).then(() => {
+    send(client, 'NEW {"name": "New Test Game"}');
+    return getNextJson<[number, LobbyInfo]>(client, [
+      ReturnCode.GAME_CREATED,
+      ReturnCode.LOBBY_INFO,
+    ]).then(data => {
+      return data[0];
+    });
+  });
+
+export const lastResponse = (client: TestClient) => {
+  const calls = client.response.mock.calls;
+  return calls[calls.length - 1][0];
+};

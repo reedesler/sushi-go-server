@@ -1,5 +1,10 @@
 import { createServer, endServer, start, SushiGoServer } from "../src/SushiGoServer";
 import {
+  checkJson,
+  createGame,
+  createTestClient,
+  endTest,
+  lastResponse,
   login,
   runTest,
   send,
@@ -105,4 +110,56 @@ describe("Creating a new game", () => {
         return waitForCode(client, ReturnCode.INVALID_COMMAND);
       }),
     ));
+});
+
+test("Shows game creator commands after creating a game", () =>
+  runTest(PORT, client =>
+    createGame(client).then(() => {
+      send(client, "a");
+      return waitFor(client, '404 ["DELETE","START"]');
+    }),
+  ));
+
+test("Can delete game after creating one", () =>
+  runTest(PORT, client =>
+    createGame(client).then(() => {
+      send(client, "DELETE");
+      return waitForJson(client, {
+        code: ReturnCode.LOBBY_INFO,
+        data: { gameList: [], queuedForGame: null },
+      });
+    }),
+  ));
+
+const createdGame = (id: number) => ({
+  code: ReturnCode.LOBBY_INFO,
+  data: {
+    gameList: [
+      {
+        creator: "CreatorClient",
+        id,
+        maxPlayers: 5,
+        name: "New Test Game",
+        players: ["CreatorClient"],
+      },
+    ],
+    queuedForGame: null,
+  },
+});
+
+test("Can see existing games when logged in", () => {
+  const creatorClient = createTestClient(PORT, "CreatorClient");
+  const joinClient = createTestClient(PORT, "JoinClient");
+  return createGame(creatorClient)
+    .then(id => login(joinClient).then(() => checkJson(createdGame(id), lastResponse(joinClient))))
+    .finally(() => Promise.all([endTest(creatorClient), endTest(joinClient)]));
+});
+
+test("Can see new game when it is created", () => {
+  const creatorClient = createTestClient(PORT, "CreatorClient");
+  const joinClient = createTestClient(PORT, "JoinClient");
+  return login(joinClient)
+    .then(() => createGame(creatorClient))
+    .then(id => waitForJson(joinClient, createdGame(id)))
+    .finally(() => Promise.all([endTest(creatorClient), endTest(joinClient)]));
 });
