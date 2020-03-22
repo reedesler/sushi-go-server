@@ -1,12 +1,6 @@
 import { GameQueue } from "../lobby/GameQueue";
-import {
-  Command,
-  interceptWithCommands,
-  send,
-  SushiGoClient,
-  waitForCommand,
-} from "../SushiGoClient";
-import { GameLobby, interceptLobby } from "../lobby/GameLobby";
+import { ClientState, ClientStateAction, mergeActions, SushiGoClient } from "../SushiGoClient";
+import { GameLobby } from "../lobby/GameLobby";
 import { remove, shuffle } from "../util";
 import { Card, GameData, ReturnCode } from "../ApiTypes";
 
@@ -26,7 +20,6 @@ interface Game {
 
 interface Player extends SushiGoClient {
   game: Game;
-  onLeave: () => void;
   playerState: PlayerState;
 }
 
@@ -35,18 +28,18 @@ const addCards = (deck: Card[], card: Card, count: number): Card[] =>
 
 const newDeck = (): Card[] => {
   let deck: Card[] = [];
-  deck = addCards(deck, "t", 14);
-  deck = addCards(deck, "s", 14);
-  deck = addCards(deck, "d", 14);
-  deck = addCards(deck, "m2", 12);
-  deck = addCards(deck, "m3", 8);
-  deck = addCards(deck, "m1", 6);
-  deck = addCards(deck, "n2", 10);
-  deck = addCards(deck, "n3", 5);
-  deck = addCards(deck, "n1", 5);
-  deck = addCards(deck, "p", 10);
-  deck = addCards(deck, "w", 6);
-  deck = addCards(deck, "c", 4);
+  deck = addCards(deck, "tempura", 14);
+  deck = addCards(deck, "sashimi", 14);
+  deck = addCards(deck, "dumpling", 14);
+  deck = addCards(deck, "maki2", 12);
+  deck = addCards(deck, "maki3", 8);
+  deck = addCards(deck, "maki1", 6);
+  deck = addCards(deck, "nigiri2", 10);
+  deck = addCards(deck, "nigiri3", 5);
+  deck = addCards(deck, "nigiri1", 5);
+  deck = addCards(deck, "pudding", 10);
+  deck = addCards(deck, "wasabi", 6);
+  deck = addCards(deck, "chopsticks", 4);
   return shuffle(deck);
 };
 
@@ -59,22 +52,32 @@ const newGame = (gameInfo: GameQueue): Game => {
   };
 };
 
-export const startGame = (gameInfo: GameQueue, lobby: GameLobby, client: SushiGoClient) => {
+export const startGame = (
+  gameInfo: GameQueue,
+  lobby: GameLobby,
+  client: SushiGoClient,
+): ClientStateAction => {
   const game = newGame(gameInfo);
+  const startAction: ClientStateAction = {};
   for (const p of gameInfo.players) {
     const player: Player = {
       ...p,
       game,
-      onLeave: () => {},
       playerState: { cards: [], hand: [], puddings: 0, scores: [] },
     };
-    const onLeave = () => handlePlayerDisconnect(game, player, lobby);
-    player.onLeave = onLeave;
-    player.socket.on("close", onLeave);
     game.players.push(player);
+
+    startAction[p.id] = {
+      messages: [{ code: ReturnCode.GAME_STARTED, data: "Game started" }],
+      onClose: () => ({}), //handlePlayerDisconnect(game, player, lobby)
+    };
   }
-  initGame(game);
-  return waitForCommand(client, gameCommands, game);
+
+  for (const p of game.players) {
+    p.playerState.hand = dealHand(game);
+  }
+
+  return mergeActions(startAction, runPick(game));
 };
 
 const dealHand = (game: Game) => {
@@ -85,27 +88,31 @@ const dealHand = (game: Game) => {
   return hand;
 };
 
-const gameCommands: Command<Game>[] = [
+const gameCommands: ClientState = [
   {
     action: "PICK",
     isJSON: true,
     arguments: ["handIndex"],
-    handle: (client, args, retry, game) => {
-      return Promise.resolve({ message: "picked" });
+    handle: args => {
+      return {};
     },
   },
 ];
 
-const initGame = (game: Game) => {
+const runPick = (game: Game): ClientStateAction => {
+  const pickAction: ClientStateAction = {};
   for (const p of game.players) {
-    const hand = dealHand(game);
-    p.playerState.hand = hand;
-    send(p, { code: ReturnCode.GAME_STARTED, data: "Game started" });
-    interceptWithCommands(p, gameCommands, game, {
-      code: ReturnCode.PICK_CARD,
-      data: getGameData(game, p),
-    });
+    pickAction[p.id] = {
+      messages: [
+        {
+          code: ReturnCode.PICK_CARD,
+          data: getGameData(game, p),
+        },
+      ],
+      newState: gameCommands,
+    };
   }
+  return pickAction;
 };
 
 const getGameData = (game: Game, player: Player): GameData => ({
@@ -119,15 +126,15 @@ const getGameData = (game: Game, player: Player): GameData => ({
   })),
   round: game.round,
 });
-
-const handlePlayerDisconnect = (game: Game, player: Player, lobby: GameLobby) => {
-  remove(player, game.players);
-  game.players.forEach(p => {
-    p.socket.removeListener("close", p.onLeave);
-    const client: SushiGoClient = { socket: p.socket, name: p.name, version: p.version, id: p.id };
-    interceptLobby(lobby, client, {
-      code: ReturnCode.GAME_ENDED,
-      data: "Other player disconnected",
-    });
-  });
-};
+//
+// const handlePlayerDisconnect = (game: Game, player: Player, lobby: GameLobby) => {
+//   remove(player, game.players);
+//   game.players.forEach(p => {
+//     p.socket.removeListener("close", p.onLeave);
+//     const client: SushiGoClient = { socket: p.socket, name: p.name, version: p.version, id: p.id };
+//     interceptLobby(lobby, client, {
+//       code: ReturnCode.GAME_ENDED,
+//       data: "Other player disconnected",
+//     });
+//   });
+// };

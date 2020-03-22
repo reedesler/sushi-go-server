@@ -26,7 +26,19 @@ export interface GameInfo {
   creator: string;
 }
 
-export type Card = "t" | "s" | "d" | "m3" | "m2" | "m1" | "n3" | "n2" | "n1" | "p" | "w" | "c";
+export type Card =
+  | "tempura"
+  | "sashimi"
+  | "dumpling"
+  | "maki3"
+  | "maki2"
+  | "maki1"
+  | "nigiri3"
+  | "nigiri2"
+  | "nigiri1"
+  | "pudding"
+  | "wasabi"
+  | "chopsticks";
 
 export interface GameData {
   hand: Card[];

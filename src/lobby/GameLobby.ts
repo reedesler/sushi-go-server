@@ -12,6 +12,7 @@ import {
   SingleClientStateAction,
   SushiGoClient,
 } from "../SushiGoClient";
+import { startGame } from "../game/Game";
 
 export interface GameLobby {
   games: GameQueue[];
@@ -133,7 +134,7 @@ const gameCreatorCommands = (client: SushiGoClient, lobby: GameLobby): ClientSta
     action: "START",
     isJSON: false,
     arguments: [],
-    handle: () => retry(client, { code: ReturnCode.UNIMPLEMENTED, data: "Unimplemented" }), //startGameFromLobby(lobby, client),
+    handle: () => startGameFromLobby(lobby, client),
   },
 ];
 
@@ -204,19 +205,15 @@ const removeClientFromGame = (lobby: GameLobby, client: SushiGoClient) => {
   return mergeActions(updateAction, setState(client, lobbyCommands(client, lobby)));
 };
 
-// const startGameFromLobby = (lobby: GameLobby, client: SushiGoClient) => {
-//   const game = getClientGame(lobby, client);
-//   if (game) {
-//     remove(game, lobby.games);
-//     for (const p of game.players) {
-//       const onLeave = lobby.clientsInLobby.get(client);
-//       if (onLeave) {
-//         client.socket.removeListener("close", onLeave);
-//         lobby.clientsInLobby.delete(p);
-//       }
-//     }
-//     updateLobbyInfoForAll(lobby);
-//     return startGame(game, lobby, client);
-//   }
-//   return waitForCommand(client, lobbyCommands, lobby);
-// };
+const startGameFromLobby = (lobby: GameLobby, client: SushiGoClient): ClientStateAction => {
+  const game = getClientGame(lobby, client);
+  if (game) {
+    remove(game, lobby.games);
+    for (const p of game.players) {
+      lobby.clientsInLobby.delete(p);
+    }
+    return mergeActions(updateLobbyInfoForAll(lobby), startGame(game, lobby, client));
+  } else {
+    return setState(client, lobbyCommands(client, lobby));
+  }
+};
