@@ -1,5 +1,5 @@
 import { GameLobby } from "./GameLobby";
-import { Data, SushiGoClient } from "../NewSushiGoClient";
+import { Data, SushiGoClient } from "../SushiGoClient";
 
 export interface GameQueue {
   id: number;

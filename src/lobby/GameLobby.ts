@@ -1,7 +1,6 @@
 import { GameQueue, parseGame } from "./GameQueue";
 import { ReturnCode } from "../ApiTypes";
 import { remove } from "../util";
-import { startGame } from "../game/Game";
 import {
   ClientState,
   ClientStateAction,
@@ -12,7 +11,7 @@ import {
   setState,
   SingleClientStateAction,
   SushiGoClient,
-} from "../NewSushiGoClient";
+} from "../SushiGoClient";
 
 export interface GameLobby {
   games: GameQueue[];
@@ -134,7 +133,7 @@ const gameCreatorCommands = (client: SushiGoClient, lobby: GameLobby): ClientSta
     action: "START",
     isJSON: false,
     arguments: [],
-    handle: () => ({}), //startGameFromLobby(lobby, client),
+    handle: () => retry(client, { code: ReturnCode.UNIMPLEMENTED, data: "Unimplemented" }), //startGameFromLobby(lobby, client),
   },
 ];
 

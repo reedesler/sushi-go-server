@@ -7,12 +7,12 @@ import {
   commandToString,
   createClient,
   Data,
+  getName,
   getSocketName,
   handleInput,
   Message,
   SushiGoClient,
-} from "./NewSushiGoClient";
-import { getName } from "./SushiGoClient";
+} from "./SushiGoClient";
 
 const LOG = process.env.NODE_ENV !== "test";
 
