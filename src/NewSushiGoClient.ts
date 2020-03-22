@@ -28,7 +28,7 @@ export interface ClientStateAction {
   [clientId: string]: SingleClientStateAction;
 }
 
-type SingleClientStateAction = {
+export type SingleClientStateAction = {
   messages?: Message[];
   newState?: ClientState;
   onClose?: () => ClientStateAction;
@@ -80,7 +80,7 @@ export const createClient = (socket: net.Socket): SushiGoClient => {
   };
 };
 
-const getSocketName = (socket: net.Socket) => socket.remoteAddress + ":" + socket.remotePort;
+export const getSocketName = (socket: net.Socket) => socket.remoteAddress + ":" + socket.remotePort;
 
 export const retry = (client: SushiGoClient, message: Message): ClientStateAction => ({
   [client.id]: { retry: true, messages: [message] },
@@ -92,6 +92,10 @@ export const setState = (
   message?: Message,
 ): ClientStateAction => ({
   [client.id]: { messages: message ? [message] : [], newState: state },
+});
+
+export const sendMessage = (client: SushiGoClient, message: Message): ClientStateAction => ({
+  [client.id]: { messages: [message] },
 });
 
 export const handleInput = (client: SushiGoClient, input: string): ClientStateAction => {
@@ -110,7 +114,7 @@ export const handleInput = (client: SushiGoClient, input: string): ClientStateAc
         return command.handle(jsonData);
       } catch (e) {
         return retry(client, {
-          code: ReturnCode.COMMAND_NOT_FOUND,
+          code: ReturnCode.INVALID_JSON,
           data: "Invalid JSON: " + jsonString,
         });
       }
@@ -129,31 +133,6 @@ export const handleInput = (client: SushiGoClient, input: string): ClientStateAc
 
 export const commandToString = (c: Command) =>
   c.action + (c.arguments.length > 0 ? " " + c.arguments.map(a => "<" + a + ">").join(" ") : "");
-
-const getMessageString = (m: Message) => m.code + " " + JSON.stringify(m.data) + "\n";
-
-export const send = <T extends Data>(client: SushiGoClient, message: Message<T>) => {
-  if (client.socket.destroyed) {
-    if (LOG) {
-      console.log("Tried to sent message to disconnected client: " + getSocketName(client.socket));
-    }
-    return;
-  }
-  const messageString = getMessageString(message);
-  if (LOG) {
-    console.log("->" + getName(client) + " - " + messageString);
-  }
-  client.socket.write(messageString);
-};
-
-export const destroy = (client: SushiGoClient, message: Message) => {
-  const messageString = getMessageString(message);
-  client.socket.write(messageString);
-  client.socket.destroy();
-  if (LOG) {
-    console.log("Destroyed client: " + getName(client) + " - " + messageString);
-  }
-};
 
 export const mergeActions = (
   baseAction: ClientStateAction,

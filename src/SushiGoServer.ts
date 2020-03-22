@@ -6,11 +6,13 @@ import {
   ClientStateAction,
   commandToString,
   createClient,
-  destroy,
+  Data,
+  getSocketName,
   handleInput,
-  send,
+  Message,
   SushiGoClient,
 } from "./NewSushiGoClient";
+import { getName } from "./SushiGoClient";
 
 const LOG = process.env.NODE_ENV !== "test";
 
@@ -95,6 +97,10 @@ const runActions = (server: Pick<SushiGoServer, "clients">, actions: ClientState
     if (action.newState) {
       actionClient.state = action.newState;
     }
+
+    if (action.onClose) {
+      actionClient.onClose = action.onClose;
+    }
   }
 };
 
@@ -113,3 +119,28 @@ const welcomeCommands = (client: SushiGoClient, lobby: GameLobby): ClientState =
 export const endServer = (server: SushiGoServer, onEnd?: () => void) => {
   server.socket.close(onEnd);
 };
+
+const send = <T extends Data>(client: SushiGoClient, message: Message<T>) => {
+  if (client.socket.destroyed) {
+    if (LOG) {
+      console.log("Tried to sent message to disconnected client: " + getSocketName(client.socket));
+    }
+    return;
+  }
+  const messageString = getMessageString(message);
+  if (LOG) {
+    console.log("->" + getName(client) + " - " + messageString);
+  }
+  client.socket.write(messageString);
+};
+
+const destroy = (client: SushiGoClient, message: Message) => {
+  const messageString = getMessageString(message);
+  client.socket.write(messageString);
+  client.socket.destroy();
+  if (LOG) {
+    console.log("Destroyed client: " + getName(client) + " - " + messageString);
+  }
+};
+
+const getMessageString = (m: Message) => m.code + " " + JSON.stringify(m.data) + "\n";
