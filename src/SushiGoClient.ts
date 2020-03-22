@@ -1,11 +1,15 @@
 import * as net from "net";
 import { ReturnCode } from "./ApiTypes";
 import * as shortid from "shortid";
+import * as rl from "readline";
+import { SushiGoServer } from "./SushiGoServer";
 
 const LOG = process.env.NODE_ENV !== "test";
+// const LOG = true;
 
 export interface SushiGoClient {
   socket: net.Socket;
+  readline: rl.Interface;
   name: string;
   version: string;
   id: string;
@@ -25,6 +29,7 @@ export interface Message<T extends Data = Data> {
 export const createClient = (socket: net.Socket): SushiGoClient => {
   const socketName = getSocketName(socket);
   socket.setEncoding("utf8");
+  const readline = rl.createInterface(socket, socket);
 
   if (LOG) {
     console.log("Client connected: " + socketName);
@@ -43,6 +48,7 @@ export const createClient = (socket: net.Socket): SushiGoClient => {
     name: "",
     version: "",
     id: shortid.generate(),
+    readline,
   };
 };
 

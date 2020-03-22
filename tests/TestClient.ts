@@ -60,7 +60,7 @@ const getNextJson = <T>(client: TestClient, code: ReturnCode) =>
     return getJson(response) as T;
   });
 
-export const send = (client: TestClient, data: string) => client.clientSocket.write(data);
+export const send = (client: TestClient, data: string) => client.clientSocket.write(data + "\n");
 
 export const endClient = (client: TestClient) =>
   client.clientSocket.destroyed
