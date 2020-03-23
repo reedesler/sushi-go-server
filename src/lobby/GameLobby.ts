@@ -30,7 +30,7 @@ const lobbyCommands = (client: SushiGoClient, lobby: GameLobby): ClientState => 
   {
     action: "JOIN",
     isJSON: true,
-    arguments: ["gameId"],
+    arguments: [{ name: "gameId" }],
     handle: id => {
       const game = lobby.games.find(g => g.id === id);
       if (!game)
@@ -46,7 +46,7 @@ const lobbyCommands = (client: SushiGoClient, lobby: GameLobby): ClientState => 
   {
     action: "NEW",
     isJSON: true,
-    arguments: ["gameConfig"],
+    arguments: [{ name: "gameConfig" }],
     handle: data => {
       const parsedGame = parseGame(data, lobby, client);
       if (parsedGame.error)

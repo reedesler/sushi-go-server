@@ -108,7 +108,7 @@ const welcomeCommands = (client: SushiGoClient, lobby: GameLobby): ClientState =
   {
     action: "HELO",
     isJSON: false,
-    arguments: ["name", "version"],
+    arguments: [{ name: "name" }, { name: "version" }],
     handle: args => {
       const newClient = { ...client, name: args[0], version: args[1] };
       return enterLobby(lobby, newClient);

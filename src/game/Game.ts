@@ -91,8 +91,8 @@ const dealHand = (game: Game) => {
 const gameCommands: ClientState = [
   {
     action: "PICK",
-    isJSON: true,
-    arguments: ["handIndex"],
+    isJSON: false,
+    arguments: [{ name: "handIndex" }, { name: "secondHandIndex", optional: true }],
     handle: args => {
       return {};
     },

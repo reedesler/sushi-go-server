@@ -2,6 +2,7 @@ import * as net from "net";
 import * as rl from "readline";
 import * as shortid from "shortid";
 import { ReturnCode } from "./ApiTypes";
+import { sum } from "./util";
 
 const LOG = process.env.NODE_ENV !== "test";
 
@@ -34,16 +35,21 @@ export type SingleClientStateAction = {
   retry?: boolean;
 };
 
+interface Argument {
+  name: string;
+  optional?: boolean;
+}
+
 interface StringCommand {
   action: string;
-  arguments: string[];
+  arguments: Argument[];
   isJSON: false;
   handle: (args: string[]) => ClientStateAction;
 }
 
 interface JsonCommand {
   action: string;
-  arguments: [string];
+  arguments: [Argument];
   isJSON: true;
   handle: (data: unknown) => ClientStateAction;
 }
@@ -119,7 +125,9 @@ export const handleInput = (client: SushiGoClient, input: string): ClientStateAc
         });
       }
     } else {
-      if (args.length !== command.arguments.length + 1) {
+      const requiredArgumentCount = sum(command.arguments.map(a => (a.optional ? 0 : 1)));
+      const totalArgumentCount = sum(command.arguments.map(() => 1));
+      if (args.length - 1 < requiredArgumentCount || args.length - 1 > totalArgumentCount) {
         return retry(client, {
           code: ReturnCode.INVALID_COMMAND,
           data: "Invalid arguments, use " + commandToString(command),
@@ -132,7 +140,10 @@ export const handleInput = (client: SushiGoClient, input: string): ClientStateAc
 };
 
 export const commandToString = (c: Command) =>
-  c.action + (c.arguments.length > 0 ? " " + c.arguments.map(a => "<" + a + ">").join(" ") : "");
+  c.action +
+  (c.arguments.length > 0
+    ? " " + c.arguments.map(a => "<" + a.name + (a.optional ? "?" : "") + ">").join(" ")
+    : "");
 
 export const mergeActions = (
   baseAction: ClientStateAction,
