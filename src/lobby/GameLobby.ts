@@ -1,5 +1,5 @@
 import { GameQueue, parseGame } from "./GameQueue";
-import { ReturnCode } from "../ApiTypes";
+import { LobbyInfo, ReturnCode } from "../ApiTypes";
 import { remove } from "../util";
 import {
   ClientState,
@@ -65,11 +65,15 @@ const inQueueCommands = (client: SushiGoClient, lobby: GameLobby): ClientState =
   },
 ];
 
-export const enterLobby = (lobby: GameLobby, client: SushiGoClient): ClientStateAction => {
+export const enterLobby = (
+  lobby: GameLobby,
+  client: SushiGoClient,
+  message?: Message,
+): ClientStateAction => {
   lobby.clientsInLobby.add(client);
   return {
     [client.id]: {
-      messages: [getLobbyInfoMessage(lobby, client)],
+      messages: [...(message ? [message] : []), getLobbyInfoMessage(lobby, client)],
       newState: lobbyCommands(client, lobby),
       onClose: () => removeClientFromLobby(lobby, client),
     },
@@ -95,7 +99,7 @@ const removeClientFromLobby = (lobby: GameLobby, client: SushiGoClient): ClientS
   }
 };
 
-const getLobbyInfo = (lobby: GameLobby, client: SushiGoClient) => {
+const getLobbyInfo = (lobby: GameLobby, client: SushiGoClient): LobbyInfo => {
   const gameList = lobby.games.map(g => ({
     ...g,
     creator: g.creator.name,
@@ -212,7 +216,7 @@ const startGameFromLobby = (lobby: GameLobby, client: SushiGoClient): ClientStat
     for (const p of game.players) {
       lobby.clientsInLobby.delete(p);
     }
-    return mergeActions(updateLobbyInfoForAll(lobby), startGame(game, lobby, client));
+    return mergeActions(updateLobbyInfoForAll(lobby), startGame(game, lobby));
   } else {
     return setState(client, lobbyCommands(client, lobby));
   }

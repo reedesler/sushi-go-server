@@ -1,6 +1,6 @@
 import { GameQueue } from "../lobby/GameQueue";
 import { ClientState, ClientStateAction, mergeActions, SushiGoClient } from "../SushiGoClient";
-import { GameLobby } from "../lobby/GameLobby";
+import { enterLobby, GameLobby } from "../lobby/GameLobby";
 import { remove, shuffle } from "../util";
 import { Card, GameData, ReturnCode } from "../ApiTypes";
 
@@ -52,11 +52,7 @@ const newGame = (gameInfo: GameQueue): Game => {
   };
 };
 
-export const startGame = (
-  gameInfo: GameQueue,
-  lobby: GameLobby,
-  client: SushiGoClient,
-): ClientStateAction => {
+export const startGame = (gameInfo: GameQueue, lobby: GameLobby): ClientStateAction => {
   const game = newGame(gameInfo);
   const startAction: ClientStateAction = {};
   const players = shuffle(gameInfo.players);
@@ -70,7 +66,7 @@ export const startGame = (
 
     startAction[p.id] = {
       messages: [{ code: ReturnCode.GAME_STARTED, data: "Game started" }],
-      onClose: () => ({}), //handlePlayerDisconnect(game, player, lobby)
+      onClose: () => handlePlayerDisconnect(game, player, lobby),
     };
   }
 
@@ -127,15 +123,22 @@ const getGameData = (game: Game, player: Player): GameData => ({
   })),
   round: game.round,
 });
-//
-// const handlePlayerDisconnect = (game: Game, player: Player, lobby: GameLobby) => {
-//   remove(player, game.players);
-//   game.players.forEach(p => {
-//     p.socket.removeListener("close", p.onLeave);
-//     const client: SushiGoClient = { socket: p.socket, name: p.name, version: p.version, id: p.id };
-//     interceptLobby(lobby, client, {
-//       code: ReturnCode.GAME_ENDED,
-//       data: "Other player disconnected",
-//     });
-//   });
-// };
+
+const handlePlayerDisconnect = (
+  game: Game,
+  player: Player,
+  lobby: GameLobby,
+): ClientStateAction => {
+  remove(player, game.players);
+  let disconnectAction: ClientStateAction = {};
+  game.players.forEach(p => {
+    disconnectAction = {
+      ...disconnectAction,
+      ...enterLobby(lobby, p, {
+        code: ReturnCode.GAME_ENDED,
+        data: "Other player disconnected",
+      }),
+    };
+  });
+  return disconnectAction;
+};
