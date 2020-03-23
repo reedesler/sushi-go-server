@@ -25,7 +25,7 @@ test("Commands are case insensitive", () =>
   runTest(PORT, client =>
     waitForCode(client, ReturnCode.GIVE_NAME).then(() => {
       send(client, "hElO TestClient 4.7");
-      return waitForCode(client, ReturnCode.LOBBY_INFO);
+      return waitForCode(client, ReturnCode.JOINED_SERVER);
     }),
   ));
 

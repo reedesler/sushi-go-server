@@ -4,6 +4,7 @@ export enum ReturnCode {
   LOBBY_INFO = "200",
   GAME_CREATED = "201",
   GAME_STARTED = "202",
+  JOINED_SERVER = "250",
   INVALID_COMMAND = "400",
   INVALID_JSON = "401",
   COMMAND_NOT_FOUND = "404",

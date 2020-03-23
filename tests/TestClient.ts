@@ -68,10 +68,12 @@ export const endClient = (client: TestClient) =>
     : new Promise(resolve => client.clientSocket.end(resolve));
 
 export const login = (client: TestClient) =>
-  waitForCode(client, ReturnCode.GIVE_NAME).then(() => {
-    send(client, `HELO ${client.name} 0.1`);
-    return waitForCode(client, ReturnCode.LOBBY_INFO);
-  });
+  waitForCode(client, ReturnCode.GIVE_NAME)
+    .then(() => {
+      send(client, `HELO ${client.name} 0.1`);
+      return waitForCode(client, ReturnCode.JOINED_SERVER);
+    })
+    .then(() => waitForCode(client, ReturnCode.LOBBY_INFO));
 
 export const createGame = (client: TestClient) =>
   login(client).then(() => {

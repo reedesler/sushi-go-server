@@ -27,13 +27,17 @@ afterAll(done => endServer(server, done));
 
 test("Returns initial game lobby info", () =>
   runTest(PORT, client =>
-    waitForCode(client, ReturnCode.GIVE_NAME).then(() => {
-      send(client, "HELO TestClient 0.1");
-      return waitForJson(client, {
-        code: ReturnCode.LOBBY_INFO,
-        data: { gameList: [], queuedForGame: null },
-      });
-    }),
+    waitForCode(client, ReturnCode.GIVE_NAME)
+      .then(() => {
+        send(client, "HELO TestClient 0.1");
+        return waitForCode(client, ReturnCode.JOINED_SERVER);
+      })
+      .then(() =>
+        waitForJson(client, {
+          code: ReturnCode.LOBBY_INFO,
+          data: { gameList: [], queuedForGame: null },
+        }),
+      ),
   ));
 
 test("Displays game lobby commands", () =>
@@ -150,10 +154,12 @@ test("Can see existing games when logged in", () => {
   const joinClient = createTestClient(PORT, "JoinClient");
   return createGame(creatorClient)
     .then(id =>
-      waitForCode(joinClient, ReturnCode.GIVE_NAME).then(() => {
-        send(joinClient, `HELO ${joinClient.name} 0.1`);
-        return waitForJson(joinClient, createdGame(id));
-      }),
+      waitForCode(joinClient, ReturnCode.GIVE_NAME)
+        .then(() => {
+          send(joinClient, `HELO ${joinClient.name} 0.1`);
+          return waitForCode(joinClient, ReturnCode.JOINED_SERVER);
+        })
+        .then(() => waitForJson(joinClient, createdGame(id))),
     )
     .finally(() => Promise.all([endClient(creatorClient), endClient(joinClient)]));
 });

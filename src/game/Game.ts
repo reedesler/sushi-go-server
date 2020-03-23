@@ -59,7 +59,8 @@ export const startGame = (
 ): ClientStateAction => {
   const game = newGame(gameInfo);
   const startAction: ClientStateAction = {};
-  for (const p of gameInfo.players) {
+  const players = shuffle(gameInfo.players);
+  for (const p of players) {
     const player: Player = {
       ...p,
       game,

@@ -10,7 +10,9 @@ import {
   getName,
   getSocketName,
   handleInput,
+  mergeActions,
   Message,
+  sendMessage,
   SushiGoClient,
 } from "./SushiGoClient";
 
@@ -111,7 +113,10 @@ const welcomeCommands = (client: SushiGoClient, lobby: GameLobby): ClientState =
     arguments: [{ name: "name" }, { name: "version" }],
     handle: args => {
       const newClient = { ...client, name: args[0], version: args[1] };
-      return enterLobby(lobby, newClient);
+      return mergeActions(
+        sendMessage(client, { code: ReturnCode.JOINED_SERVER, data: client.id }),
+        enterLobby(lobby, newClient),
+      );
     },
   },
 ];
