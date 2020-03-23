@@ -1,5 +1,12 @@
 import { GameQueue } from "../lobby/GameQueue";
-import { ClientState, ClientStateAction, mergeActions, SushiGoClient } from "../SushiGoClient";
+import {
+  ClientState,
+  ClientStateAction,
+  mergeActions,
+  retry,
+  setState,
+  SushiGoClient,
+} from "../SushiGoClient";
 import { enterLobby, GameLobby } from "../lobby/GameLobby";
 import { remove, shuffle } from "../util";
 import { Card, GameData, ReturnCode } from "../ApiTypes";
@@ -9,6 +16,7 @@ interface PlayerState {
   scores: number[];
   puddings: number;
   hand: Card[];
+  pickedCards: [Card, Card?] | null;
 }
 
 interface Game {
@@ -60,7 +68,7 @@ export const startGame = (gameInfo: GameQueue, lobby: GameLobby): ClientStateAct
     const player: Player = {
       ...p,
       game,
-      playerState: { cards: [], hand: [], puddings: 0, scores: [] },
+      playerState: { cards: [], hand: [], puddings: 0, scores: [], pickedCards: null },
     };
     game.players.push(player);
 
@@ -74,7 +82,7 @@ export const startGame = (gameInfo: GameQueue, lobby: GameLobby): ClientStateAct
     p.playerState.hand = dealHand(game);
   }
 
-  return mergeActions(startAction, runPick(game));
+  return mergeActions(startAction, runPickPrompt(game));
 };
 
 const dealHand = (game: Game) => {
@@ -85,20 +93,63 @@ const dealHand = (game: Game) => {
   return hand;
 };
 
-const gameCommands: ClientState = [
+const gameCommands = (player: Player, game: Game): ClientState => [
   {
     action: "PICK",
     isJSON: false,
     arguments: [{ name: "handIndex" }, { name: "secondHandIndex", optional: true }],
     handle: args => {
-      return {};
+      const index = parseInt(args[0]);
+
+      const errorAction = checkValidIndex(index, player);
+      if (errorAction) return errorAction;
+
+      const hand = player.playerState.hand;
+
+      const pickedCards: [Card, Card?] = [hand[index]];
+
+      if (args[1]) {
+        const hasChopsticks = player.playerState.cards.some(c => c === "chopsticks");
+        if (!hasChopsticks) {
+          return retry(player, {
+            code: ReturnCode.INVALID_CARD_INDEX,
+            data: "You don't have chopsticks to use",
+          });
+        }
+
+        const secondIndex = parseInt(args[1]);
+
+        const errorAction = checkValidIndex(secondIndex, player);
+        if (errorAction) return errorAction;
+
+        pickedCards.push(hand[secondIndex]);
+      }
+
+      player.playerState.pickedCards = pickedCards;
+
+      const waitAction = setState(player, [], { code: ReturnCode.GOT_PICK, data: "Card chosen" });
+      const nextStepAction = getNextStep(game);
+
+      return mergeActions(waitAction, nextStepAction);
     },
   },
 ];
 
-const runPick = (game: Game): ClientStateAction => {
+const checkValidIndex = (index: number, player: Player) => {
+  if (isNaN(index))
+    return retry(player, { code: ReturnCode.INVALID_CARD_INDEX, data: "Invalid index" });
+  const hand = player.playerState.hand;
+  if (index < 0 || index >= hand.length)
+    return retry(player, {
+      code: ReturnCode.INVALID_CARD_INDEX,
+      data: "Index must be >= 0 and <= " + (hand.length - 1),
+    });
+};
+
+const runPickPrompt = (game: Game): ClientStateAction => {
   const pickAction: ClientStateAction = {};
   for (const p of game.players) {
+    p.playerState.pickedCards = null;
     pickAction[p.id] = {
       messages: [
         {
@@ -106,10 +157,69 @@ const runPick = (game: Game): ClientStateAction => {
           data: getGameData(game, p),
         },
       ],
-      newState: gameCommands,
+      newState: gameCommands(p, game),
     };
   }
   return pickAction;
+};
+
+const getNextStep = (game: Game): ClientStateAction => {
+  const allPicked = game.players.every(p => p.playerState.pickedCards);
+  if (!allPicked) {
+    return {};
+  }
+
+  for (const player of game.players) {
+    handlePick(player);
+  }
+
+  passCards(game);
+
+  // sanity check all players have the same number of cards
+  const cardCount = game.players[0].playerState.hand.length;
+  const allPlayersHaveCardCount = game.players.every(p => p.playerState.hand.length === cardCount);
+  if (!allPlayersHaveCardCount) throw new Error("players had different number of cards");
+
+  if (cardCount <= 1) return endRound(game);
+
+  return runPickPrompt(game);
+};
+
+const handlePick = (player: Player) => {
+  const { pickedCards } = player.playerState;
+  if (!pickedCards) throw new Error("didn't have picked cards");
+
+  const [pickedCard, secondCard] = pickedCards;
+  handToCards(pickedCard, player);
+
+  if (secondCard) {
+    handToCards(secondCard, player);
+    const removedChopsticks = remove<Card>("chopsticks", player.playerState.cards);
+    if (!removedChopsticks) throw new Error("couldn't swap in chopsticks");
+    player.playerState.hand.push("chopsticks");
+  }
+};
+
+const handToCards = (card: Card, player: Player) => {
+  remove(card, player.playerState.hand);
+  player.playerState.cards.push(card);
+};
+
+const passCards = (game: Game) => {
+  const lastHand = game.players[game.players.length - 1].playerState.hand;
+
+  for (let i = game.players.length - 2; i >= 0; i--) {
+    const passingPlayer = game.players[i];
+    const nextPlayer = game.players[i + 1];
+    nextPlayer.playerState.hand = passingPlayer.playerState.hand;
+  }
+
+  game.players[0].playerState.hand = lastHand;
+};
+
+const endRound = (game: Game): ClientStateAction => {
+  // TODO
+  return {};
 };
 
 const getGameData = (game: Game, player: Player): GameData => ({

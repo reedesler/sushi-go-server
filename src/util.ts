@@ -1,4 +1,11 @@
-export const remove = <T>(element: T, array: T[]) => array.splice(array.indexOf(element), 1);
+export const remove = <T>(element: T, array: T[]) => {
+  const index = array.indexOf(element);
+  if (index >= 0) {
+    array.splice(index, 1);
+    return true;
+  }
+  return false;
+};
 
 export const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
 
