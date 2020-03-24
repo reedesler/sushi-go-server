@@ -125,8 +125,8 @@ export const handleInput = (client: SushiGoClient, input: string): ClientStateAc
         });
       }
     } else {
-      const requiredArgumentCount = sum(command.arguments.map(a => (a.optional ? 0 : 1)));
-      const totalArgumentCount = sum(command.arguments.map(() => 1));
+      const requiredArgumentCount = command.arguments.filter(c => !c.optional).length;
+      const totalArgumentCount = command.arguments.length;
       if (args.length - 1 < requiredArgumentCount || args.length - 1 > totalArgumentCount) {
         return retry(client, {
           code: ReturnCode.INVALID_COMMAND,

@@ -8,7 +8,7 @@ import {
   SushiGoClient,
 } from "../SushiGoClient";
 import { enterLobby, GameLobby } from "../lobby/GameLobby";
-import { remove, shuffle } from "../util";
+import { getTopTwo, remove, shuffle, sum } from "../util";
 import { Card, GameData, ReturnCode } from "../ApiTypes";
 
 interface PlayerState {
@@ -56,7 +56,7 @@ const newGame = (gameInfo: GameQueue): Game => {
     name: gameInfo.name,
     players: [],
     deck: newDeck(),
-    round: 1,
+    round: 0,
   };
 };
 
@@ -78,18 +78,21 @@ export const startGame = (gameInfo: GameQueue, lobby: GameLobby): ClientStateAct
     };
   }
 
+  return mergeActions(startAction, nextRound(game));
+};
+
+const nextRound = (game: Game) => {
+  game.round += 1;
   for (const p of game.players) {
     p.playerState.hand = dealHand(game);
   }
 
-  return mergeActions(startAction, runPickPrompt(game));
+  return runPickPrompt(game);
 };
 
 const dealHand = (game: Game) => {
   const n = 12 - game.players.length;
-  console.log(n);
   const hand = game.deck.splice(0, n);
-  console.log(hand);
   return hand;
 };
 
@@ -175,7 +178,7 @@ const getNextStep = (game: Game): ClientStateAction => {
 
   passCards(game);
 
-  // sanity check all players have the same number of cards
+  // sanity check all players have the same number of cards in hand
   const cardCount = game.players[0].playerState.hand.length;
   const allPlayersHaveCardCount = game.players.every(p => p.playerState.hand.length === cardCount);
   if (!allPlayersHaveCardCount) throw new Error("players had different number of cards");
@@ -218,9 +221,132 @@ const passCards = (game: Game) => {
 };
 
 const endRound = (game: Game): ClientStateAction => {
-  // TODO
-  return {};
+  if (game.players[0].playerState.hand.length === 1) {
+    for (const p of game.players) {
+      handToCards(p.playerState.hand[0], p);
+    }
+  }
+
+  // sanity check all players have the same number of cards
+  const cardCount = game.players[0].playerState.cards.length;
+  const allPlayersHaveCardCount = game.players.every(p => p.playerState.cards.length === cardCount);
+  if (!allPlayersHaveCardCount) throw new Error("players had different number of cards");
+
+  const groupScores = calculateGroupScores(game.players);
+
+  const roundEndMessage: ClientStateAction = {};
+
+  for (const player of game.players) {
+    const score = calculateIndividualScore(player.playerState.cards);
+    const totalScore = score + groupScores[player.id];
+    player.playerState.scores[game.round - 1] = totalScore;
+    player.playerState.puddings += puddingCount(player.playerState.cards);
+  }
+
+  game.players.forEach(p => {
+    roundEndMessage[p.id] = {
+      messages: [{ code: ReturnCode.ROUND_END, data: getGameData(game, p) }],
+    };
+  });
+
+  game.players.forEach(p => (p.playerState.cards = []));
+
+  if (game.round === 3) return mergeActions(roundEndMessage, endGame(game));
+
+  return mergeActions(roundEndMessage, nextRound(game));
 };
+
+export const calculateGroupScores = (players: { id: string; playerState: { cards: Card[] } }[]) => {
+  const groupScores = players.reduce(
+    (scores: { [id: string]: number }, p) => ({ ...scores, [p.id]: 0 }),
+    {},
+  );
+  const makiScores = players.map(p => ({ id: p.id, score: getMakiScore(p.playerState.cards) }));
+  const { first: firstScore, second: secondScore } = getTopTwo(makiScores.map(s => s.score));
+  const firstScoreCount = makiScores.filter(s => s.score === firstScore).length;
+  const secondScoreCount = makiScores.filter(s => s.score === secondScore).length;
+
+  if (firstScore > 0) {
+    const firstScoreShare = Math.floor(6 / firstScoreCount);
+    for (const s of makiScores) {
+      if (s.score === firstScore) {
+        groupScores[s.id] = firstScoreShare;
+      }
+    }
+
+    if (firstScoreCount === 1 && secondScore > 0) {
+      const secondScoreShare = Math.floor(3 / secondScoreCount);
+      for (const s of makiScores) {
+        if (s.score === secondScore) {
+          groupScores[s.id] = secondScoreShare;
+        }
+      }
+    }
+  }
+
+  return groupScores;
+};
+
+export const getMakiScore = (cards: Card[]) =>
+  sum(
+    cards.map(c => {
+      switch (c) {
+        case "maki1":
+          return 1;
+        case "maki2":
+          return 2;
+        case "maki3":
+          return 3;
+        default:
+          return 0;
+      }
+    }),
+  );
+
+export const calculateIndividualScore = (cards: Card[]) =>
+  tempuraScore(cards) + sashimiScore(cards) + dumplingScore(cards) + nigiriScore(cards);
+
+export const tempuraScore = (cards: Card[]) =>
+  Math.floor(cards.filter(c => c === "tempura").length / 2) * 5;
+
+export const sashimiScore = (cards: Card[]) =>
+  Math.floor(cards.filter(c => c === "sashimi").length / 3) * 10;
+
+export const dumplingScore = (cards: Card[]) => {
+  const dumplings = cards.filter(c => c === "dumpling").length;
+  const n = Math.min(dumplings, 5);
+  return (n * (n + 1)) / 2;
+};
+
+export const nigiriScore = (cards: Card[]) => {
+  let score = 0;
+  let wasabis = 0;
+  for (const card of cards) {
+    let nigiri = 0;
+    if (card === "wasabi") {
+      wasabis += 1;
+    } else if (card === "nigiri1") {
+      nigiri = 1;
+    } else if (card === "nigiri2") {
+      nigiri = 2;
+    } else if (card === "nigiri3") {
+      nigiri = 3;
+    }
+
+    if (nigiri > 0 && wasabis > 0) {
+      nigiri *= 3;
+      wasabis -= 1;
+    }
+
+    score += nigiri;
+  }
+
+  return score;
+};
+
+const puddingCount = (cards: Card[]) => cards.filter(c => c === "pudding").length;
+
+const endGame = (game: Game): ClientStateAction => ({});
 
 const getGameData = (game: Game, player: Player): GameData => ({
   hand: player.playerState.hand,

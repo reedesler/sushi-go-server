@@ -18,3 +18,22 @@ export const shuffle = <T>(array: T[]) => {
   }
   return a;
 };
+
+export const getTopTwo = (arr: number[]) =>
+  arr.reduce(
+    ({ first, second }, n) => {
+      if (n > first) {
+        return { first: n, second: first };
+      } else if (n === first) {
+        return { first, second };
+      } else if (n > second) {
+        return { first, second: n };
+      } else {
+        return { first, second };
+      }
+    },
+    {
+      first: 0,
+      second: 0,
+    },
+  );

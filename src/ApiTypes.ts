@@ -5,6 +5,7 @@ export enum ReturnCode {
   GAME_CREATED = "201",
   GAME_STARTED = "202",
   GOT_PICK = "210",
+  ROUND_END = "211",
   JOINED_SERVER = "250",
   INVALID_COMMAND = "400",
   INVALID_JSON = "401",
