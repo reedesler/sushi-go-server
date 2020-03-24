@@ -24,12 +24,15 @@ interface Game {
   players: Player[];
   deck: Card[];
   round: number;
+  lobby: GameLobby;
 }
 
 interface Player extends SushiGoClient {
   game: Game;
   playerState: PlayerState;
 }
+
+const ROUNDS = 3;
 
 const addCards = (deck: Card[], card: Card, count: number): Card[] =>
   deck.concat(...Array(count).fill(card));
@@ -51,17 +54,18 @@ const newDeck = (): Card[] => {
   return shuffle(deck);
 };
 
-const newGame = (gameInfo: GameQueue): Game => {
+const newGame = (gameInfo: GameQueue, lobby: GameLobby): Game => {
   return {
     name: gameInfo.name,
     players: [],
     deck: newDeck(),
     round: 0,
+    lobby,
   };
 };
 
 export const startGame = (gameInfo: GameQueue, lobby: GameLobby): ClientStateAction => {
-  const game = newGame(gameInfo);
+  const game = newGame(gameInfo, lobby);
   const startAction: ClientStateAction = {};
   const players = shuffle(gameInfo.players);
   for (const p of players) {
@@ -251,7 +255,7 @@ const endRound = (game: Game): ClientStateAction => {
 
   game.players.forEach(p => (p.playerState.cards = []));
 
-  if (game.round === 3) return mergeActions(roundEndMessage, endGame(game));
+  if (game.round === ROUNDS) return mergeActions(roundEndMessage, endGame(game));
 
   return mergeActions(roundEndMessage, nextRound(game));
 };
@@ -346,7 +350,69 @@ export const nigiriScore = (cards: Card[]) => {
 
 const puddingCount = (cards: Card[]) => cards.filter(c => c === "pudding").length;
 
-const endGame = (game: Game): ClientStateAction => ({});
+const endGame = (game: Game): ClientStateAction => {
+  // sanity check each player has 3 scores
+  const allScored = game.players.every(p => p.playerState.scores.length === ROUNDS);
+  if (!allScored) throw new Error("player without 3 scores");
+
+  const finalScores = [];
+
+  const puddingScores = calculateFinalPuddingScores(game.players);
+
+  for (const player of game.players) {
+    const score = sum(player.playerState.scores) + puddingScores[player.id];
+    finalScores.push({ player: { id: player.id, name: player.name }, score });
+  }
+
+  const winner = finalScores.sort((a, b) => b.score - a.score)[0].player;
+
+  const gameEndMessage = { winner: { id: winner.id, name: winner.name }, scores: finalScores };
+
+  let gameEndAction: ClientStateAction = {};
+  game.players.forEach(p => {
+    gameEndAction = {
+      ...gameEndAction,
+      ...enterLobby(game.lobby, p, { code: ReturnCode.GAME_END, data: gameEndMessage }),
+    };
+  });
+
+  return gameEndAction;
+};
+
+export const calculateFinalPuddingScores = (
+  players: { id: string; playerState: { puddings: number } }[],
+) => {
+  const puddingScores = players.reduce(
+    (scores: { [id: string]: number }, p) => ({ ...scores, [p.id]: 0 }),
+    {},
+  );
+
+  const puddings = players.map(p => p.playerState.puddings);
+
+  const allEqual = puddings.every(p => p === puddings[0]);
+  if (allEqual) return puddingScores;
+
+  puddings.sort((a, b) => a - b);
+
+  const leastPudding = puddings[0];
+  const mostPudding = puddings[puddings.length - 1];
+
+  const leastPuddingCount = puddings.filter(p => p === leastPudding).length;
+  const mostPuddingCount = puddings.filter(p => p === mostPudding).length;
+
+  const mostPuddingShare = Math.floor(6 / mostPuddingCount);
+  const leastPuddingShare = Math.ceil(-6 / leastPuddingCount);
+
+  for (const player of players) {
+    if (player.playerState.puddings === mostPudding) {
+      puddingScores[player.id] = mostPuddingShare;
+    } else if (player.playerState.puddings === leastPudding && players.length > 2) {
+      puddingScores[player.id] = leastPuddingShare;
+    }
+  }
+
+  return puddingScores;
+};
 
 const getGameData = (game: Game, player: Player): GameData => ({
   hand: player.playerState.hand,

@@ -1,4 +1,5 @@
 import {
+  calculateFinalPuddingScores,
   calculateGroupScores,
   calculateIndividualScore,
   dumplingScore,
@@ -199,3 +200,60 @@ test("Get individual score", () =>
       "nigiri3",
     ]),
   ).toBe(17));
+
+describe("Get pudding scores", () => {
+  test("all 0 pudding", () =>
+    expect(
+      calculateFinalPuddingScores([
+        { id: "a", playerState: { puddings: 0 } },
+        { id: "b", playerState: { puddings: 0 } },
+        { id: "c", playerState: { puddings: 0 } },
+      ]),
+    ).toEqual({ a: 0, b: 0, c: 0 }));
+
+  test("all same pudding", () =>
+    expect(
+      calculateFinalPuddingScores([
+        { id: "a", playerState: { puddings: 5 } },
+        { id: "b", playerState: { puddings: 5 } },
+        { id: "c", playerState: { puddings: 5 } },
+      ]),
+    ).toEqual({ a: 0, b: 0, c: 0 }));
+
+  test("first and last", () =>
+    expect(
+      calculateFinalPuddingScores([
+        { id: "a", playerState: { puddings: 5 } },
+        { id: "b", playerState: { puddings: 2 } },
+        { id: "c", playerState: { puddings: 0 } },
+      ]),
+    ).toEqual({ a: 6, b: 0, c: -6 }));
+
+  test("share first", () =>
+    expect(
+      calculateFinalPuddingScores([
+        { id: "a", playerState: { puddings: 5 } },
+        { id: "b", playerState: { puddings: 5 } },
+        { id: "c", playerState: { puddings: 0 } },
+      ]),
+    ).toEqual({ a: 3, b: 3, c: -6 }));
+
+  test("share last", () =>
+    expect(
+      calculateFinalPuddingScores([
+        { id: "a", playerState: { puddings: 5 } },
+        { id: "b", playerState: { puddings: 0 } },
+        { id: "c", playerState: { puddings: 0 } },
+        { id: "d", playerState: { puddings: 0 } },
+        { id: "e", playerState: { puddings: 0 } },
+      ]),
+    ).toEqual({ a: 6, b: -1, c: -1, d: -1, e: -1 }));
+
+  test("no last for 2 player game", () =>
+    expect(
+      calculateFinalPuddingScores([
+        { id: "a", playerState: { puddings: 5 } },
+        { id: "b", playerState: { puddings: 2 } },
+      ]),
+    ).toEqual({ a: 6, b: 0 }));
+});
