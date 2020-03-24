@@ -9,7 +9,7 @@ import {
 } from "../SushiGoClient";
 import { enterLobby, GameLobby } from "../lobby/GameLobby";
 import { getTopTwo, remove, shuffle, sum } from "../util";
-import { Card, GameData, ReturnCode } from "../ApiTypes";
+import { Card, GameData, GameEnd, ReturnCode } from "../ApiTypes";
 
 interface PlayerState {
   cards: Card[];
@@ -364,9 +364,13 @@ const endGame = (game: Game): ClientStateAction => {
     finalScores.push({ player: { id: player.id, name: player.name }, score });
   }
 
+  // TODO: tie break with pudding
   const winner = finalScores.sort((a, b) => b.score - a.score)[0].player;
 
-  const gameEndMessage = { winner: { id: winner.id, name: winner.name }, scores: finalScores };
+  const gameEndMessage: GameEnd = {
+    winner: { id: winner.id, name: winner.name },
+    scores: finalScores,
+  };
 
   let gameEndAction: ClientStateAction = {};
   game.players.forEach(p => {
@@ -437,7 +441,7 @@ const handlePlayerDisconnect = (
     disconnectAction = {
       ...disconnectAction,
       ...enterLobby(lobby, p, {
-        code: ReturnCode.GAME_ENDED,
+        code: ReturnCode.GAME_INTERRUPTED,
         data: "Other player disconnected",
       }),
     };

@@ -15,7 +15,7 @@ export enum ReturnCode {
   TOO_MANY_RETRIES = "499",
   GAME_DELETED = "500",
   UNIMPLEMENTED = "504",
-  GAME_ENDED = "510",
+  GAME_INTERRUPTED = "510",
 }
 
 export interface LobbyInfo {
@@ -49,4 +49,15 @@ export interface GameData {
   hand: Card[];
   playerStates: { id: string; name: string; cards: Card[]; scores: number[]; puddings: number }[];
   round: number;
+}
+
+export interface GameEnd {
+  winner: { id: string; name: string };
+  scores: Array<{
+    player: {
+      id: string;
+      name: string;
+    };
+    score: number;
+  }>;
 }
